@@ -9,3 +9,7 @@ __pycache__/
 mqtt_buffer.db
 dev_ecdsa_key.pem
 .DS_Store
+*.csv
+data/
+data13/
+date-*/

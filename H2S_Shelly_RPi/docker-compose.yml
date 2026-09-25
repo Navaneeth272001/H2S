@@ -14,5 +14,16 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  collector:
+    build: .
+    container_name: h2s_collector
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+
 volumes:
   pgdata:
