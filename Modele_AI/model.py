@@ -2,12 +2,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from google.colab import drive
-drive.mount('/content/drive')
-df1= pd.read_csv("/content/drive/MyDrive/model2/energy_minute1.csv")
-df2=pd.read_csv("/content/drive/MyDrive/model2/energy_minute2.csv")
-df3= pd.read_csv("/content/drive/MyDrive/model2/energy_minute3.csv")
-df4=pd.read_csv("/content/drive/MyDrive/model2/energy_minute4.csv")
+df1= pd.read_csv("energy_minute1.csv")
+df2= pd.read_csv("energy_minute2.csv")
+df3= pd.read_csv("energy_minute3.csv")
+df4= pd.read_csv("energy_minute4.csv")
 
 df1.head()
 df2.head()
@@ -29,7 +27,7 @@ df = df.sort_values(['timestamp']).reset_index(drop=True)
 df.head()
 df.head(30)
 # Créer une colonne "hour" qui ne garde que l'heure
-df['hour'] = df['timestamp'].dt.floor('H')  # arrondi à l'heure
+df['hour'] = df['timestamp'].dt.floor('h')  # arrondi à l'heure
 # Agréger par heure et appareil
 df_hourly = df.groupby(['hour', 'device_id', 'device_name'])['energy_minute_wh'].sum().reset_index()
 
@@ -78,14 +76,14 @@ df_hourly_devices
 
 df_hourly_devices = df_hourly_devices.rename(columns={'hour': 'time'})
 df_hourly_devices.shape
-df_meteo = pd.read_csv("/content/drive/MyDrive/model2/open-meteo.csv")
+df_meteo = pd.read_csv("open-meteo.csv")
 
 df_meteo['time'] = pd.to_datetime(df_meteo['time'])
 
 df_meteo.head()
 df_meteo.shape
-df_meteo['time'] = df_meteo['time'].dt.floor('H')
-df_hourly_devices['time'] = df_hourly_devices['time'].dt.floor('H')
+df_meteo['time'] = df_meteo['time'].dt.floor('h')
+df_hourly_devices['time'] = df_hourly_devices['time'].dt.floor('h')
 df_final = pd.merge(
     df_hourly_devices,
     df_meteo,
@@ -125,10 +123,10 @@ BATTERY_CAPACITY = 2200  # Wh
 battery_soc = 600        # SOC initial réel
 
 # Initialiser colonnes (vides, la boucle remplira)
-df_final['battery_soc'] = 0
-df_final['grid_needed'] = 0
-df_final['battery_charge'] = 0
-df_final['battery_discharge'] = 0
+df_final['battery_soc'] = 0.0
+df_final['grid_needed'] = 0.0
+df_final['battery_charge'] = 0.0
+df_final['battery_discharge'] = 0.0
 
 for i, row in df_final.iterrows():
     renewable = row['production_wh']
@@ -228,36 +226,27 @@ df_final['grid_needed'].sum()
 df_final.head()
 # =============================================================================
 # LIGHTGBM MULTI-OUTPUT – ENERGY PREDICTION (PRODUCTION READY)
-# Targets:
-# - energy_total_wh
-# - production_wh
-# - battery_soc
 # =============================================================================
 
 # =============================================================================
-# 1. INSTALLATION
-# =============================================================================
-!pip install lightgbm optuna scikit-learn matplotlib seaborn -q
-
-# =============================================================================
-# 2. IMPORTS
+# 1. IMPORTS
 # =============================================================================
 import pandas as pd
 import numpy as np
 import lightgbm as lgb
 import optuna
-
-from sklearn.model_selection import train_test_split
+import os
+import joblib
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 
 # =============================================================================
-# 3. CONFIGURATION
+# 2. CONFIGURATION
 # =============================================================================
 RANDOM_STATE = 42
 N_TRIALS = 50
@@ -268,26 +257,35 @@ TARGET_COLUMNS = [
     "battery_soc"
 ]
 
+# We will predict T+1h and T+24h
+TARGETS_1H = [f"{t}_target_1h" for t in TARGET_COLUMNS]
+TARGETS_24H = [f"{t}_target_24h" for t in TARGET_COLUMNS]
+
+# Data to drop to prevent leakage
+# Device columns contain current consumption data which sums to energy_total_wh
+DEVICE_COLS = ["Lampe Chambre", "Lampe Cuisine", "Lampe Salle à manger",
+               "Ecran", "PC Portable", "TV Salle à manger", "Telephone / Tablette", "Cafetiere"]
+
 LEAKAGE_COLS = [
     "energy_balance_wh",
     "battery_charge",
     "battery_discharge",
     "grid_needed"
-]
+] + DEVICE_COLS + TARGET_COLUMNS # Drop current targets too because they are basically the device cols and other targets
 
 # =============================================================================
-# 4. FEATURE ENGINEERING (INDUSTRY GRADE)
+# 3. FEATURE ENGINEERING (CONTEXTUAL & HISTORICAL)
 # =============================================================================
-def prepare_features(df, drop_time=True, drop_na=True, include_lag_targets=True):
+def prepare_features(df):
     df = df.copy()
 
-    # Ensure 'time' is datetime and sort for correct lag creation
+    # Ensure 'time' is datetime and sort
     if "time" in df.columns:
         df["time"] = pd.to_datetime(df["time"])
         df = df.sort_values("time").reset_index(drop=True)
 
     # -------------------------------------------------------------------------
-    # TIME FEATURES
+    # CONTEXTUAL FEATURES (Time, Weather)
     # -------------------------------------------------------------------------
     if "time" in df.columns:
         df["hour"] = df["time"].dt.hour
@@ -300,95 +298,75 @@ def prepare_features(df, drop_time=True, drop_na=True, include_lag_targets=True)
         df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
         df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
 
-    # -------------------------------------------------------------------------
-    # LOAD AGGREGATES (CRITICAL)
-    # -------------------------------------------------------------------------
-    # Check if device columns exist before creating aggregates
-    device_cols = ["Lampe Chambre", "Lampe Cuisine", "Lampe Salle à manger",
-                   "Ecran", "PC Portable", "TV Salle à manger", "Telephone / Tablette", "Cafetiere"]
-    if all(col in df.columns for col in device_cols):
-        df["total_lighting_wh"] = (
-            df["Lampe Chambre"] +
-            df["Lampe Cuisine"] +
-            df["Lampe Salle à manger"]
-        )
-
-        df["total_plug_wh"] = (
-            df["Ecran"] +
-            df["PC Portable"] +
-            df["TV Salle à manger"] +
-            df["Telephone / Tablette"]
-        )
-
-        df["total_load_wh"] = (
-            df["total_lighting_wh"] +
-            df["total_plug_wh"] +
-            df["Cafetiere"]
-        )
-    else:
-        # Create dummy columns if missing to prevent errors, or handle as appropriate for your data.
-        # For df_final, these columns should exist.
-        for col in device_cols:
-            if col not in df.columns:
-                df[col] = 0.0 # Or raise an error if these are critical
-
-    # -------------------------------------------------------------------------
-    # SOLAR / WEATHER FEATURES
-    # -------------------------------------------------------------------------
     if "solar_wh" in df.columns and "radiation" in df.columns:
-        # Avoid division by zero if radiation is 0
         df["solar_efficiency"] = df["solar_wh"] / (df["radiation"].replace(0, 1e-6))
         df["is_night"] = (df["radiation"] < 1).astype(int)
     elif "radiation" in df.columns:
         df["is_night"] = (df["radiation"] < 1).astype(int)
-        if "solar_wh" not in df.columns:
-             df["solar_wh"] = 0 # Dummy if missing
+        df["solar_wh"] = df.get("solar_wh", 0)
         df["solar_efficiency"] = df["solar_wh"] / (df["radiation"].replace(0, 1e-6))
     else:
         df["solar_efficiency"] = 0
         df["is_night"] = 0
 
+    # -------------------------------------------------------------------------
+    # HISTORICAL FEATURES (Lags & Moving Averages)
+    # -------------------------------------------------------------------------
+    for lag in [1, 2, 24]:
+        for col in TARGET_COLUMNS:
+            if col in df.columns:
+                df[f"{col}_lag{lag}"] = df[col].shift(lag)
+                
+    for window in [6, 24]:
+        for col in TARGET_COLUMNS:
+            if col in df.columns:
+                df[f"{col}_rolling_mean_{window}h"] = df[col].shift(1).rolling(window=window).mean()
 
     # -------------------------------------------------------------------------
-    # LAG FEATURES (TIME SERIES – VERY IMPORTANT) for current timestep's X
+    # TARGET SHIFTING (Future Prediction)
     # -------------------------------------------------------------------------
-    if include_lag_targets:
-        for lag in [1, 2, 3]:
-            for target_col in TARGET_COLUMNS:
-                if target_col in df.columns: # Ensure the column exists before creating a lag
-                    df[f"{target_col}_lag{lag}"] = df[target_col].shift(lag)
+    for target in TARGET_COLUMNS:
+        df[f"{target}_target_1h"] = df[target].shift(-1)
+        df[f"{target}_target_24h"] = df[target].shift(-24)
 
     # -------------------------------------------------------------------------
-    # REMOVE TIME COLUMN (conditional)
+    # CLEANUP
     # -------------------------------------------------------------------------
-    if drop_time and "time" in df.columns:
-        df = df.drop(columns=["time"])
-
-    # -------------------------------------------------------------------------
-    # DROP NA (conditional)
-    # -------------------------------------------------------------------------
-    if drop_na:
-        df = df.dropna()
-
+    # Drop rows with NaN (due to lags and rolling windows)
+    df = df.dropna().reset_index(drop=True)
     return df
-import pandas as pd
-import numpy as np
-import lightgbm as lgb
-import optuna
 
-from sklearn.model_selection import train_test_split
-from sklearn.multioutput import MultiOutputRegressor
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+# =============================================================================
+# 4. PREPARE X & Y
+# =============================================================================
+def get_X_y(df, target_horizon="1h"):
+    df_feat = prepare_features(df)
+    
+    # Select targets based on horizon
+    if target_horizon == "1h":
+        y_cols = TARGETS_1H
+        drop_targets = TARGETS_24H
+    elif target_horizon == "24h":
+        y_cols = TARGETS_24H
+        drop_targets = TARGETS_1H
+    else:
+        raise ValueError("target_horizon must be '1h' or '24h'")
+        
+    y = df_feat[y_cols]
+    
+    # X excludes future targets and leakage columns
+    X = df_feat.drop(columns=y_cols + drop_targets)
+    X = X.drop(columns=[c for c in LEAKAGE_COLS if c in X.columns])
+    
+    # Keep time for plotting but don't use it as feature
+    time_col = X.pop("time") if "time" in X.columns else None
+    
+    return X, y, time_col
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-import warnings
-warnings.filterwarnings("ignore")
-
-from sklearn.model_selection import KFold
-
+# =============================================================================
+# 5. OBJECTIVE FUNCTION FOR OPTUNA (With TimeSeriesSplit)
+# =============================================================================
 def objective_cv(trial, X, y, n_splits=5):
-    # Suggest hyperparameters
     params = {
         "n_estimators": trial.suggest_int("n_estimators", 200, 800),
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
@@ -403,16 +381,16 @@ def objective_cv(trial, X, y, n_splits=5):
         "verbosity": -1
     }
 
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
+    # TEMPORAL CROSS-VALIDATION
+    tscv = TimeSeriesSplit(n_splits=n_splits)
     rmses = []
 
-    for train_idx, valid_idx in kf.split(X):
+    for train_idx, valid_idx in tscv.split(X):
         X_train, X_valid = X.iloc[train_idx], X.iloc[valid_idx]
         y_train, y_valid = y.iloc[train_idx], y.iloc[valid_idx]
 
         model = MultiOutputRegressor(lgb.LGBMRegressor(**params))
         model.fit(X_train, y_train)
-
         preds = model.predict(X_valid)
 
         fold_rmses = [
@@ -421,235 +399,44 @@ def objective_cv(trial, X, y, n_splits=5):
         ]
         rmses.append(np.mean(fold_rmses))
 
-    # Return mean RMSE across folds
-    return np.mean(rmses)
-import optuna
-
-study = optuna.create_study(direction="minimize")
-study.optimize(lambda trial: objective_cv(trial, X, y, n_splits=5), n_trials=50)
-
-print("Best params:", study.best_params)
-print("Best RMSE:", study.best_value)
-import pandas as pd
-import numpy as np
-import lightgbm as lgb
-from sklearn.multioutput import MultiOutputRegressor
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.model_selection import KFold
-import warnings
-warnings.filterwarnings("ignore")
-
-# ================================
-# Settings
-# ================================
-RANDOM_STATE = 42
-TARGET_COLUMNS = [
-    "energy_total_wh",
-    "production_wh",
-    "battery_soc"
-]  # Corrected target outputs
-LEAKAGE_COLS = [
-    "energy_balance_wh",
-    "battery_charge",
-    "battery_discharge",
-    "grid_needed"
-]  # Corrected leakage columns
-
-# ================================
-# Best parameters (from previous Optuna run)
-# ================================
-best_params = {
-    'n_estimators': 272,
-    'learning_rate': 0.09554820977656957,
-    'num_leaves': 98,
-    'max_depth': 9,
-    'min_child_samples': 10,
-    'subsample': 0.7487107797000587,
-    'colsample_bytree': 0.8785698577169511,
-    'reg_alpha': 1.0479049013702662,
-    'reg_lambda': 4.2651377222939795,
-    'random_state': RANDOM_STATE,
-    'verbosity': -1
-}
-
-# ================================
-# Prepare features and targets
-# ================================
-def get_X_y(df):
-    df = prepare_features(df)  # your custom feature engineering
-    X = df.drop(columns=TARGET_COLUMNS)
-    y = df[TARGET_COLUMNS]
-    X = X.drop(columns=[c for c in LEAKAGE_COLS if c in X.columns])
-    return X, y
-
-# ================================
-# Load dataset
-# ================================
-X, y = get_X_y(df_final)
-
-# ================================
-# Train final model on full dataset
-# ================================
-final_model = MultiOutputRegressor(lgb.LGBMRegressor(**best_params))
-final_model.fit(X, y)
-print("✅ Final model trained on full dataset with 3 outputs.")
-
-# ================================
-# Evaluate with cross-validation
-# ================================
-kf = KFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
-cv_r2 = []
-cv_rmse = []
-
-for train_idx, valid_idx in kf.split(X):
-    X_train, X_valid = X.iloc[train_idx], X.iloc[valid_idx]
-    y_train, y_valid = y.iloc[train_idx], y.iloc[valid_idx]
-
-    model = MultiOutputRegressor(lgb.LGBMRegressor(**best_params))
-    model.fit(X_train, y_train)
-    preds = model.predict(X_valid)
-
-    fold_rmse = [np.sqrt(mean_squared_error(y_valid.iloc[:, i], preds[:, i])) for i in range(y.shape[1])]
-    fold_r2 = [r2_score(y_valid.iloc[:, i], preds[:, i]) for i in range(y.shape[1])]
-
-    cv_rmse.append(np.mean(fold_rmse))
-    cv_r2.append(np.mean(fold_r2))
-
-print(f"\nCross-validated RMSE: {np.mean(cv_rmse):.4f}")
-print(f"Cross-validated R² : {np.mean(cv_r2):.4f}")
-
-# ================================
-# Predict on new data
-# ================================
-# X_new = prepare_features(new_df)
-# predictions = final_model.predict(X_new)
-# pred_df = pd.DataFrame(predictions, columns=TARGET_COLUMNS)
-# print(pred_df.head())
-
-import pandas as pd
-import numpy as np
-import lightgbm as lgb
-import optuna
-from sklearn.multioutput import MultiOutputRegressor
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.model_selection import train_test_split, KFold
-import warnings
-
-warnings.filterwarnings("ignore")
-
-# ================================
-# 1️⃣ Settings
-# ================================
-RANDOM_STATE = 42
-N_TRIALS = 50  # number of Optuna trials
-TARGET_COLUMNS = [
-    "energy_total_wh",
-    "production_wh",
-    "battery_soc"
-]
-LEAKAGE_COLS = [
-    "energy_balance_wh",
-    "battery_charge",
-    "battery_discharge",
-    "grid_needed"
-]
-
-# ================================
-# 2️⃣ Best parameters (from previous Optuna run)
-# ================================
-best_params = {
-    'n_estimators': 272,
-    'learning_rate': 0.09554820977656957,
-    'num_leaves': 98,
-    'max_depth': 9,
-    'min_child_samples': 10,
-    'subsample': 0.7487107797000587,
-    'colsample_bytree': 0.8785698577169511,
-    'reg_alpha': 1.0479049013702662,
-    'reg_lambda': 4.2651377222939795,
-    'random_state': RANDOM_STATE,
-    'verbosity': -1
-}
-
-# ================================
-# 3️⃣ Prepare features and targets
-# ================================
-def get_X_y(df):
-    df = prepare_features(df)  # your custom feature engineering
-    X = df.drop(columns=TARGET_COLUMNS)
-    y = df[TARGET_COLUMNS]
-    X = X.drop(columns=[c for c in LEAKAGE_COLS if c in X.columns])
-    return X, y
-
-# ================================
-# 4️⃣ Objective function for Optuna
-# ================================
-def objective(trial, X_train, y_train, X_valid, y_valid):
-    params = {
-        "n_estimators": trial.suggest_int("n_estimators", 200, 800),
-        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
-        "num_leaves": trial.suggest_int("num_leaves", 32, 128),
-        "max_depth": trial.suggest_int("max_depth", 4, 10),
-        "min_child_samples": trial.suggest_int("min_child_samples", 10, 80),
-        "subsample": trial.suggest_float("subsample", 0.7, 1.0),
-        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
-        "reg_alpha": trial.suggest_float("reg_alpha", 1e-6, 5.0, log=True),
-        "reg_lambda": trial.suggest_float("reg_lambda", 1e-6, 5.0, log=True),
-        "random_state": RANDOM_STATE,
-        "verbosity": -1
-    }
-    model = MultiOutputRegressor(lgb.LGBMRegressor(**params))
-    model.fit(X_train, y_train)
-    preds = model.predict(X_valid)
-
-    # RMSE per target, then mean
-    rmses = [np.sqrt(mean_squared_error(y_valid.iloc[:, i], preds[:, i])) for i in range(y_valid.shape[1])]
     return np.mean(rmses)
 
-# ================================
-# 5️⃣ Training pipeline
-# ================================
-def train_model(df, use_optuna=True):
-    X, y = get_X_y(df)
+# =============================================================================
+# 6. TRAINING PIPELINE
+# =============================================================================
+def train_model(df, target_horizon="1h", use_optuna=True):
+    print(f"\n--- Training Model for Horizon: {target_horizon} ---")
+    X, y, time_col = get_X_y(df, target_horizon=target_horizon)
 
-    # --- Time series split: 80% train, 10% validation, 10% test ---
-    X_trainval, X_test, y_trainval, y_test = train_test_split(
-        X, y, test_size=0.10, shuffle=False
-    )
-    X_train, X_valid, y_train, y_valid = train_test_split(
-        X_trainval, y_trainval, test_size=0.1111, shuffle=False
-    )
+    # Time series split: 80% train, 20% test
+    split_idx = int(len(X) * 0.8)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+    time_test = time_col.iloc[split_idx:] if time_col is not None else None
 
-    # --- Hyperparameter tuning ---
+    # Hyperparameter tuning
     if use_optuna:
         study = optuna.create_study(direction="minimize")
-        study.optimize(
-            lambda t: objective(t, X_train, y_train, X_valid, y_valid),
-            n_trials=N_TRIALS
-        )
-        final_params = study.best_params
-        print("\n✅ Best parameters from Optuna:")
-        for k, v in final_params.items():
-            print(f"{k}: {v}")
+        study.optimize(lambda trial: objective_cv(trial, X_train, y_train, n_splits=5), n_trials=N_TRIALS)
+        best_params = study.best_params
+        print("Best params:", best_params)
     else:
-        final_params = best_params
-        study = None
-        print("\n✅ Using predefined best parameters.")
+        # Fallback to sensible defaults
+        best_params = {
+            'n_estimators': 300, 'learning_rate': 0.05, 'num_leaves': 64,
+            'max_depth': 6, 'min_child_samples': 20, 'subsample': 0.8,
+            'colsample_bytree': 0.8, 'random_state': RANDOM_STATE, 'verbosity': -1
+        }
+        print("Using default params.")
 
-    # --- Train final model on train + valid ---
-    # 'verbosity' is already in best_params, so remove explicit verbosity=-1
-    final_model = MultiOutputRegressor(
-        lgb.LGBMRegressor(**final_params)
-    )
-    X_full = pd.concat([X_train, X_valid])
-    y_full = pd.concat([y_train, y_valid])
-    final_model.fit(X_full, y_full)
-    print("\n✅ Final model trained on full training + validation set.")
+    # Train final model on full training set
+    model = MultiOutputRegressor(lgb.LGBMRegressor(**best_params))
+    model.fit(X_train, y_train)
 
-    # --- Evaluate on test set ---
-    preds = final_model.predict(X_test)
+    # Evaluate on test set
+    preds = model.predict(X_test)
     print("\n================= TEST METRICS ================")
-    for i, target in enumerate(TARGET_COLUMNS):
+    for i, target in enumerate(y.columns):
         rmse = np.sqrt(mean_squared_error(y_test.iloc[:, i], preds[:, i]))
         mae = mean_absolute_error(y_test.iloc[:, i], preds[:, i])
         r2 = r2_score(y_test.iloc[:, i], preds[:, i])
@@ -658,163 +445,56 @@ def train_model(df, use_optuna=True):
         print(f"MAE : {mae:.2f}")
         print(f"R²  : {r2:.3f}")
 
-    return final_model, study
+    return model, X_test, y_test, time_test, preds
 
-# ================================
-# 6️⃣ Run training
-# ================================
-# df_final must already be loaded
-# df_final = pd.read_csv("your_data.csv")
-model, study = train_model(df_final, use_optuna=False)
-
-print("\n✅ TRAINING FINISHED SUCCESSFULLY")
-# 1. Re-create X and y for consistent splitting
-X_all_features, y_all_targets = get_X_y(df_final)
-
-# 2. Re-split the data to get X_test and y_test consistent with training
-# We only need X_test and y_test for plotting, so we can discard X_trainval and y_trainval
-_, X_test, _, y_test = train_test_split(
-    X_all_features, y_all_targets, test_size=0.10, shuffle=False
-)
-
-# 3. Make predictions on the X_test using the trained 'model'
-test_preds = model.predict(X_test)
-
-# 4. Plotting
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-sns.set_style("whitegrid")
-
-plt.figure(figsize=(15, 10))
-
-for i, target in enumerate(TARGET_COLUMNS):
-    plt.subplot(len(TARGET_COLUMNS), 1, i + 1) # Create subplots for each target
-    plt.plot(y_test.index, y_test.iloc[:, i], label=f'Actual {target}', alpha=0.7)
-    plt.plot(y_test.index, test_preds[:, i], label=f'Predicted {target}', linestyle='--', alpha=0.7)
-    plt.title(f'Actual vs Predicted {target} on Test Set')
-    plt.xlabel('Sample Index') # Using index as x-axis for alignment
-    plt.ylabel(target)
-    plt.legend()
-    plt.grid(True)
-
-plt.tight_layout()
-plt.show()
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-sns.set_style("whitegrid")
-plt.figure(figsize=(16, 8))
-
-# Get the 'time' values corresponding to the test set indices
-time_test = df_final.loc[y_test.index, 'time']
-
-# Define colors for each target variable
-colors = ['#1f77b4', '#ff7f0e', '#2ca02c'] # Blue, Orange, Green
-linestyles = ['-', '--'] # Solid for actual, dashed for predicted
-
-for i, target in enumerate(TARGET_COLUMNS):
-    # Plot Actual values
-    plt.plot(time_test, y_test.iloc[:, i],
-             label=f'Actual {target}',
-             color=colors[i],
-             linestyle=linestyles[0], alpha=0.7)
-
-    # Plot Predicted values
-    plt.plot(time_test, test_preds[:, i],
-             label=f'Predicted {target}',
-             color=colors[i],
-             linestyle=linestyles[1], alpha=0.7)
-
-plt.title('Combined Actual vs Predicted Values on Test Set', fontsize=16, fontweight='bold')
-plt.xlabel('Time', fontsize=12)
-plt.ylabel('Value (Wh / SOC)', fontsize=12)
-plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
-plt.grid(True, linestyle='--', alpha=0.6)
-plt.xticks(rotation=45, ha='right') # Rotate x-axis labels for better readability
-plt.tight_layout()
-plt.show()
-import joblib
-import os
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-# Define the save directory
-save_dir = '/content/drive/MyDrive/model2/LGBM2'
-os.makedirs(save_dir, exist_ok=True)
-print(f"Save directory created at: {save_dir}")
-
-# 1. Save the trained model
-model_path = os.path.join(save_dir, 'lgbm_multioutput_model.joblib')
-joblib.dump(model, model_path)
-print(f"Model saved to: {model_path}")
-
-# --- Save Plots ---
-
-# Ensure time_test, y_test, test_preds, and TARGET_COLUMNS are available from previous execution
-# If this cell is run independently, these might need to be re-initialized.
-# For continuity, assuming they are in the global scope.
-
-# 2. Save the individual Actual vs Predicted plots
-sns.set_style("whitegrid")
-plt.figure(figsize=(15, 10))
-
-for i, target in enumerate(TARGET_COLUMNS):
-    plt.subplot(len(TARGET_COLUMNS), 1, i + 1) # Create subplots for each target
-    plt.plot(y_test.index, y_test.iloc[:, i], label=f'Actual {target}', alpha=0.7)
-    plt.plot(y_test.index, test_preds[:, i], label=f'Predicted {target}', linestyle='--', alpha=0.7)
-    plt.title(f'Actual vs Predicted {target} on Test Set')
-    plt.xlabel('Sample Index')
-    plt.ylabel(target)
-    plt.legend()
-    plt.grid(True)
-
-plt.tight_layout()
-individual_plots_path = os.path.join(save_dir, 'individual_actual_vs_predicted_plots.png')
-plt.savefig(individual_plots_path)
-plt.close() # Close the figure to free up memory
-print(f"Individual plots saved to: {individual_plots_path}")
-
-# 3. Save the combined Actual vs Predicted plot with time on x-axis
-sns.set_style("whitegrid")
-plt.figure(figsize=(16, 8))
-
-# Get the 'time' values corresponding to the test set indices (assuming df_final is available)
+# =============================================================================
+# 7. EXECUTE PIPELINE
+# =============================================================================
 if 'df_final' in locals() or 'df_final' in globals():
-    time_test = df_final.loc[y_test.index, 'time']
-else:
-    print("Warning: df_final not found, using y_test.index for combined plot.")
-    time_test = y_test.index # Fallback if df_final isn't available
+    # Model for 1 Hour Ahead
+    model_1h, X_test_1h, y_test_1h, time_test_1h, preds_1h = train_model(df_final, target_horizon="1h", use_optuna=False)
+    
+    # Model for 24 Hours Ahead
+    model_24h, X_test_24h, y_test_24h, time_test_24h, preds_24h = train_model(df_final, target_horizon="24h", use_optuna=False)
 
-colors = ['#1f77b4', '#ff7f0e', '#2ca02c'] # Blue, Orange, Green
-linestyles = ['-', '--'] # Solid for actual, dashed for predicted
+    # =============================================================================
+    # 8. VISUALIZATION (ENHANCED)
+    # =============================================================================
+    sns.set_theme(style="darkgrid", context="talk")
+    
+    def plot_results(y_test, preds, time_test, horizon):
+        os.makedirs("trained_models", exist_ok=True)
+        fig, axes = plt.subplots(3, 1, figsize=(18, 15), sharex=True)
+        colors = ['#3498db', '#e74c3c', '#2ecc71']
+        targets = y_test.columns
+        
+        for i, target in enumerate(targets):
+            ax = axes[i]
+            ax.plot(time_test, y_test.iloc[:, i], label=f'Actual', color=colors[i], linestyle='-', linewidth=2, alpha=0.8)
+            ax.plot(time_test, preds[:, i], label=f'Predicted', color='black', linestyle='--', linewidth=2, alpha=0.7)
+            
+            # Fill between to show errors visually
+            ax.fill_between(time_test, y_test.iloc[:, i], preds[:, i], color='gray', alpha=0.2)
+            
+            ax.set_title(f'{target.replace("_", " ").title()} ({horizon} Ahead)', fontsize=16, fontweight='bold', loc='left')
+            ax.set_ylabel('Value', fontsize=12)
+            ax.legend(loc='upper left')
+            
+        axes[-1].set_xlabel('Time', fontsize=14)
+        plt.tight_layout()
+        plt.savefig(f'trained_models/predictions_plot_{horizon}.png', dpi=300, bbox_inches='tight')
+        print(f"Saved visualization for {horizon} to trained_models/predictions_plot_{horizon}.png")
+        plt.close(fig)
 
-for i, target in enumerate(TARGET_COLUMNS):
-    plt.plot(time_test, y_test.iloc[:, i],
-             label=f'Actual {target}',
-             color=colors[i],
-             linestyle=linestyles[0], alpha=0.7)
-    plt.plot(time_test, test_preds[:, i],
-             label=f'Predicted {target}',
-             color=colors[i],
-             linestyle=linestyles[1], alpha=0.7)
-
-plt.title('Combined Actual vs Predicted Values on Test Set (Time Series)', fontsize=16, fontweight='bold')
-plt.xlabel('Time', fontsize=12)
-plt.ylabel('Value (Wh / SOC)', fontsize=12)
-plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
-plt.grid(True, linestyle='--', alpha=0.6)
-plt.xticks(rotation=45, ha='right')
-plt.tight_layout()
-combined_plot_path = os.path.join(save_dir, 'combined_actual_vs_predicted_time_series_plot.png')
-plt.savefig(combined_plot_path)
-plt.close() # Close the figure
-print(f"Combined time-series plot saved to: {combined_plot_path}")
-
-print("All requested items saved successfully!")
-
-
-
-
-
+    print("\nGenerating and saving visualizations...")
+    plot_results(y_test_1h, preds_1h, time_test_1h, "1H")
+    plot_results(y_test_24h, preds_24h, time_test_24h, "24H")
+    
+    # =============================================================================
+    # 9. SAVE MODELS
+    # =============================================================================
+    os.makedirs("trained_models", exist_ok=True)
+    joblib.dump(model_1h, 'trained_models/lgbm_model_1h.joblib')
+    joblib.dump(model_24h, 'trained_models/lgbm_model_24h.joblib')
+    print("\nModels successfully saved to the 'trained_models' directory.")
 
