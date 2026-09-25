@@ -1,0 +1,84 @@
+import requests
+import time
+import csv
+from datetime import datetime
+
+# Configuration des appareils (ID, Nom, IP)
+SHELLY_DEVICES = {
+    2001: {"name": "TV Salle à manger", "ip": "192.168.1.105"},
+    2002: {"name": "Four Cuisine", "ip": "192.168.1.112"},
+    2003: {"name": "Machine à Laver Cuisine", "ip": "192.168.1.113"},
+    2004: {"name": "Frigo Cuisine", "ip": "192.168.1.150"},
+    2005: {"name": "Lampe Salle à manger", "ip": "192.168.1.107"},
+    2006: {"name": "Chargeurs Salle à manger", "ip": "192.168.1.156"},
+    2007: {"name": "Lampe Cuisine", "ip": "192.168.1.115"},
+    2008: {"name": "Lampe Chambre", "ip": "192.168.1.149"},
+}
+
+CSV_FILE = "consumption_data.csv"
+
+# Initialisation du fichier CSV avec les colonnes de la table SQL
+def init_csv():
+    with open(CSV_FILE, mode="a", newline="", encoding="utf-8") as file:
+        if file.tell() == 0:
+            writer = csv.writer(file)
+            writer.writerow([
+                "consump_id", 
+                "device_id",
+                "current_a",
+                "tension_v",
+                "power_w",
+                "energy_wh",
+                "created_at"
+            ])
+
+def read_shelly(device_id, info):
+    name = info["name"]
+    ip = info["ip"]
+    try:
+        # Requête RPC pour Shelly Gen2/Gen3
+        url = f"http://{ip}/rpc/Switch.GetStatus?id=0"
+        r = requests.get(url, timeout=5)
+        r.raise_for_status()
+        data = r.json()
+
+        # Extraction des données
+        tension_v = data.get("voltage", 0)
+        current_a = data.get("current", 0)
+        power_w = data.get("apower", 0)
+        energy_wh = data.get("aenergy", {}).get("total", 0) 
+        
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        print(f"[{created_at}] ID {device_id} ({name}) -> {power_w}W")
+
+        return [
+            None,        # consump_id (null pour auto-increment)
+            device_id,   # device_id
+            round(current_a, 3),
+            round(tension_v, 1),
+            round(power_w, 1),
+            round(energy_wh, 1),
+            created_at
+        ]
+
+    except Exception as e:
+        print(f"Erreur sur {name} ({ip}): {e}")
+        return None
+
+# --- Exécution ---
+init_csv()
+print("Démarrage du monitoring Shelly...\n")
+
+consump_id = 1  # Initialisation du compteur d'ID
+
+while True:
+    with open(CSV_FILE, mode="a", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        for dev_id, info in SHELLY_DEVICES.items():
+            data = read_shelly(dev_id, info)
+            if data:
+                writer.writerow([consump_id] + data[1:])
+                consump_id += 1  # Incrémenter l'ID
+        print(f"\n--- Attente 60 secondes (Pause entre lectures) ---\n")
+    time.sleep(60)

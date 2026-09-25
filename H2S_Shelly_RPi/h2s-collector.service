@@ -1,0 +1,15 @@
+[Unit]
+Description=H2S Shelly and Weather Collector Service
+After=network.target postgresql.service docker.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/H2S_Shelly_RPi
+ExecStart=/home/pi/H2S_Shelly_RPi/venv/bin/python main_collector.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/home/pi/H2S_Shelly_RPi/.env
+
+[Install]
+WantedBy=multi-user.target

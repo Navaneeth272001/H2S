@@ -1,0 +1,11 @@
+bin/
+lib/
+lib64/
+include/
+pyvenv.cfg
+__pycache__/
+*.pyc
+.env
+mqtt_buffer.db
+dev_ecdsa_key.pem
+.DS_Store
