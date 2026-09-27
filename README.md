@@ -6,12 +6,24 @@ This repository contains the data collection, federated learning client, and MQT
 
 The following specifications are confirmed and aligned with the backend `agent-sync` service.
 
-### 1. MQTT Topics Structure
-The topic hierarchy is versioned and isolated per gateway (no wildcard writes):
-*   **Per-Minute Energy Telemetry**: `h2s/v1/telemetry/<gateway_id>/energy/minute`
-*   **Hourly Energy Aggregation**: `h2s/v1/telemetry/<gateway_id>/energy/hourly`
-*   **Hourly Weather**: `h2s/v1/telemetry/<gateway_id>/weather`
-*   **Federated Learning Gradients**: `h2s/v1/fl/<gateway_id>/gradient`
+### 1. MQTT Topics Structure (DevOps Onboarding — Active)
+The per-agent namespace enforced by broker ACL (`<uuid>` = `AGENT_UUID`):
+*   **Telemetrie** (sensor readings): `h2s/agents/<uuid>/telemetrie` — Pi → cloud, QoS 1
+*   **Comptes-rendus** (activity reports): `h2s/agents/<uuid>/comptes-rendus` — Pi → cloud, QoS 1
+*   **Etat** (status / heartbeat): `h2s/agents/<uuid>/etat` — Pi → cloud, QoS 1
+*   **Ordres** (commands): `h2s/agents/<uuid>/ordres` — cloud → Pi, subscribe only, QoS 1
+
+> ⚠️ The previous `h2s/v1/telemetry/<gateway_id>/…` topic hierarchy is deprecated.
+
+**Payload format** (all publish topics):
+```json
+{
+  "timestamp": "2026-09-25T14:30:00Z",
+  "valeur": 12.5,
+  "unite": "kWh",
+  "capteur_id": "solar-panel-01"
+}
+```
 
 ### 2. Message Format & Encryption
 *   **Envelope Structure**: All messages are wrapped in a standard JSON envelope containing `message_id`, `sequence`, `message_type`, `timestamp`, encryption metadata, and the `signature`.

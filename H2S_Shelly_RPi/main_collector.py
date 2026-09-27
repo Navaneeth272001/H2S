@@ -4,21 +4,32 @@ import logging
 import signal
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from src.config import SHELLY_DEVICES, POLL_INTERVAL, MINUTES_PER_HOUR, TIMEZONE, MAX_ERRORS
+from src.config import SHELLY_DEVICES, POLL_INTERVAL, MINUTES_PER_HOUR, TIMEZONE, MAX_ERRORS, HEARTBEAT_INTERVAL
 from src.database import init_db, AsyncSessionLocal, EnergyMinute, EnergyHourly, WeatherHourly
 from src.collector import fetch_shelly, fetch_weather
 from src.notifier import send_email
 from src.mqtt_publisher import (
     publish_energy_minute, publish_energy_hourly,
-    publish_weather_hourly, disconnect_mqtt
+    publish_weather_hourly, publish_etat,
+    set_ordres_callback, get_mqtt_client, disconnect_mqtt
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("main_collector")
 
+def _handle_ordre(data: dict):
+    """Callback for incoming cloud → Pi orders on the ordres topic."""
+    logger.info(f"Received ordre from cloud: {data}")
+    # TODO: implement command dispatch (e.g. reboot, config update, OTA)
+
+
 async def main():
     logger.info("Starting H2S Shelly & Weather Collector...")
     await init_db()
+
+    # Initialise MQTT connection and subscribe to orders
+    set_ordres_callback(_handle_ordre)
+    get_mqtt_client()
 
     error_counts = {dev_id: 0 for dev_id in SHELLY_DEVICES}
     email_sent = {dev_id: False for dev_id in SHELLY_DEVICES}
@@ -26,6 +37,7 @@ async def main():
     # buffers for hourly aggregation
     buffers = {dev_id: {"energy": 0.0, "p": 0.0, "i": 0.0, "v": 0.0, "c": 0} for dev_id in SHELLY_DEVICES}
     minute_count = 0
+    heartbeat_elapsed = 0     # seconds since last etat publish
     
     tz = ZoneInfo(TIMEZONE)
     hour_start = datetime.now(tz).replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
@@ -159,6 +171,12 @@ async def main():
                 buffers = {d: {"energy": 0.0, "p": 0.0, "i": 0.0, "v": 0.0, "c": 0} for d in SHELLY_DEVICES}
                 minute_count = 0
                 hour_start = hour_end
+
+            # Heartbeat (etat) — publish every HEARTBEAT_INTERVAL seconds
+            heartbeat_elapsed += POLL_INTERVAL
+            if heartbeat_elapsed >= HEARTBEAT_INTERVAL:
+                publish_etat()
+                heartbeat_elapsed = 0
 
             # Sleep until next interval
             await asyncio.sleep(POLL_INTERVAL)

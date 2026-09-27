@@ -36,11 +36,15 @@ MQTT_USER = os.getenv("MQTT_USER", AGENT_UUID)
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "secret")
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", AGENT_UUID)
 
-# Topics according to backend agreement
-MQTT_TOPIC_ENERGY_MINUTE = f"h2s/v1/telemetry/{AGENT_UUID}/energy/minute"
-MQTT_TOPIC_ENERGY_HOURLY = f"h2s/v1/telemetry/{AGENT_UUID}/energy/hourly"
-MQTT_TOPIC_WEATHER_HOURLY = f"h2s/v1/telemetry/{AGENT_UUID}/weather"
-MQTT_TOPIC_FL_GRADIENT = f"h2s/v1/fl/{AGENT_UUID}/gradient"
+# MQTT Topics — DevOps-specified per-agent namespace
+# ACL enforces that each agent can only access h2s/agents/<its-own-uuid>/…
+MQTT_TOPIC_TELEMETRIE     = f"h2s/agents/{AGENT_UUID}/telemetrie"       # Pi → cloud: sensor readings
+MQTT_TOPIC_COMPTES_RENDUS = f"h2s/agents/{AGENT_UUID}/comptes-rendus"   # Pi → cloud: activity reports
+MQTT_TOPIC_ETAT           = f"h2s/agents/{AGENT_UUID}/etat"             # Pi → cloud: status / heartbeat
+MQTT_TOPIC_ORDRES         = f"h2s/agents/{AGENT_UUID}/ordres"           # cloud → Pi: subscribe only
+
+# Heartbeat interval (seconds) — DevOps recommends 60s for etat
+HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", 60))
 
 # Encryption & Signing Keys
 AES_DEK_HEX = os.getenv("AES_DEK_HEX", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
