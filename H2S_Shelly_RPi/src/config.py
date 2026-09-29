@@ -28,9 +28,9 @@ LAT = float(os.getenv("LAT", 48.8566))
 LON = float(os.getenv("LON", 2.3522))
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Paris")
 
-# MQTT Broker Config (Cloud Server)
-MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "mqtt.dev.h2splug.com")
-MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", 8883))
+# MQTT Broker Config (Local Mosquitto)
+MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
+MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", 1883))
 AGENT_UUID = os.getenv("AGENT_UUID", "123e4567-e89b-12d3-a456-426614174000")
 MQTT_USER = os.getenv("MQTT_USER", AGENT_UUID)
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "secret")
@@ -46,8 +46,6 @@ MQTT_TOPIC_ORDRES         = f"h2s/agents/{AGENT_UUID}/ordres"           # cloud 
 # Heartbeat interval (seconds) — DevOps recommends 60s for etat
 HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", 60))
 
-# Encryption & Signing Keys
-AES_DEK_HEX = os.getenv("AES_DEK_HEX", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 
 
 # Shelly Devices
