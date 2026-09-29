@@ -1,0 +1,24 @@
+{
+  "cloud_url": "https://api.h2s.example",
+  "db_url": "postgresql://h2s_agent@/h2s_agent?host=/var/run/postgresql",
+  "data_dir": "/var/lib/h2s-agent",
+  "package_public_key": "remplacer-par-la-cle-publique-de-publication-43-caracteres",
+  "key_store": "software",
+  "tpm_tcti": "device:/dev/tpmrm0",
+  "require_tpm": false,
+  "mqtt": {
+    "host": "127.0.0.1",
+    "port": 1883,
+    "username": "h2s-agent",
+    "password_file": "/etc/h2s-agent/mqtt.password"
+  },
+  "devices": [
+    { "device_id": 5, "kind": "shelly_gen2", "mqtt_id": "shellyplugs-recette", "role": "consumption" }
+  ],
+  "batteries": [
+    { "stock_id": 1, "status_topic": "h2s/site4/battery/status", "command_prefix": "h2s/site4/commands" }
+  ],
+  "weather_topic": "h2s/site4/weather/status",
+  "local_api_port": 8765,
+  "device_offline_after_s": 300
+}
