@@ -1,8 +1,8 @@
 {
   "cloud_url": "https://api.h2s.example",
-  "db_url": "postgresql://h2s_agent@/h2s_agent?host=/var/run/postgresql",
+  "db_url": "postgresql://h2s_agent:h2s_agent@127.0.0.1:5432/h2s_agent",
   "data_dir": "/var/lib/h2s-agent",
-  "package_public_key": "remplacer-par-la-cle-publique-de-publication-43-caracteres",
+  "package_public_key": null,
   "key_store": "software",
   "tpm_tcti": "device:/dev/tpmrm0",
   "require_tpm": false,
