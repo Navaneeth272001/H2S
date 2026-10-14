@@ -17,6 +17,7 @@ from src.mqtt_publisher import (
     publish_energy_minute, publish_energy_hourly,
     publish_weather_hourly, publish_etat,
     publish_battery_minute, publish_battery_status_h2s, publish_decision_report,
+    publish_device_status_h2s,
     set_ordres_callback, get_mqtt_client, disconnect_mqtt
 )
 
@@ -124,6 +125,15 @@ async def main():
                             voltage_v=voltage,
                             power_w=power,
                             energy_minute_wh=energy_minute_wh,
+                            timestamp=now.replace(tzinfo=None)
+                        )
+                        # Publish H2S JSON gateway format for h2s_agent ingestion
+                        publish_device_status_h2s(
+                            device_id=dev_id,
+                            current_a=current,
+                            voltage_v=voltage,
+                            power_w=power,
+                            energy_wh=energy_minute_wh,
                             timestamp=now.replace(tzinfo=None)
                         )
                         

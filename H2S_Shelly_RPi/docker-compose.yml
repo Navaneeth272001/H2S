@@ -16,6 +16,7 @@ services:
     build: .
     container_name: h2s_collector
     restart: unless-stopped
+    network_mode: host
     depends_on:
       - postgres
     env_file:

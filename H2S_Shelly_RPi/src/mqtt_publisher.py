@@ -141,6 +141,31 @@ def publish_energy_minute(device_id, device_name, current_a, voltage_v,
 
     logger.debug(f"Telemetrie published for {device_name} ({capteur_prefix})")
 
+def publish_device_status_h2s(device_id: int, current_a: float, voltage_v: float, power_w: float, energy_wh: float, timestamp=None):
+    """
+    Publish device status in H2S JSON gateway format consumed by h2s_agent (parsers.h2s_device).
+    """
+    if timestamp is None:
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    elif hasattr(timestamp, "strftime"):
+        ts = timestamp.strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        ts = str(timestamp)
+        if not ts.endswith("Z"):
+            ts += "Z"
+
+    device_payload = {
+        "timestamp": ts,
+        "device_id": device_id,
+        "power_w": round(float(power_w), 2),
+        "current_a": round(float(current_a), 3),
+        "voltage_v": round(float(voltage_v), 1),
+        "energy_wh": round(float(energy_wh), 3),
+    }
+    topic = f"h2s/devices/{device_id}/status"
+    _publish_raw(topic, device_payload)
+    logger.debug(f"Device status published to {topic}")
+
 def publish_weather_hourly(temperature, humidity, wind_speed, precipitation,
                            condition, ghi, timestamp):
     readings = [
