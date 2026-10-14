@@ -63,14 +63,14 @@ MQTT_TOPIC_BATTERY_STATUS = os.getenv("MQTT_TOPIC_BATTERY_STATUS", "h2s/site4/ba
 # DISCHARGE -> priority appliances turned ON (draw from battery)
 # CHARGE    -> non-critical appliances turned OFF (simulates surplus absorption)
 SHELLY_DEVICES = {
-    2001: {"name": "TV Salle à manger", "ip": "192.168.1.10", "priority": True},
-    2002: {"name": "Ecran", "ip": "192.168.1.197", "priority": True},
-    2003: {"name": "Telephone / Tablette", "ip": "192.168.1.128", "priority": True},
-    2004: {"name": "Cafetiere", "ip": "192.168.1.103", "priority": False},
-    2005: {"name": "Lampe Salle à manger", "ip": "192.168.1.8", "priority": False},
-    2006: {"name": "PC Portable", "ip": "192.168.1.176", "priority": True},
-    2007: {"name": "Lampe Cuisine", "ip": "192.168.1.130", "priority": False},
-    2008: {"name": "Lampe Chambre", "ip": "192.168.1.157", "priority": False},
+    8: {"name": "LIVING ROOM LAMP", "ip": "192.168.1.8", "priority": False},
+    9: {"name": "LIVING ROOM - TV", "ip": "192.168.1.10", "priority": True},
+    10: {"name": "KITCHEN - COFFEE MACHINE", "ip": "192.168.1.103", "priority": False},
+    11: {"name": "KITCHEN - LAMP", "ip": "192.168.1.130", "priority": False},
+    12: {"name": "BED ROOM - LAMP", "ip": "192.168.1.157", "priority": False},
+    13: {"name": "BED ROOM - PC SCREEN", "ip": "192.168.1.197", "priority": True},
+    14: {"name": "BED ROOM - COMPUTER", "ip": "192.168.1.176", "priority": True},
+    15: {"name": "BED ROOM - MOBILE PHONE/TABLET CHARGER", "ip": "192.168.1.128", "priority": True},
 }
 
 SHELLY_PRIORITY_IDS = [dev_id for dev_id, info in SHELLY_DEVICES.items() if info.get("priority")]

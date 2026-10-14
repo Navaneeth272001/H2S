@@ -13,14 +13,14 @@
     "password_file": "/etc/h2s-agent/mqtt.password"
   },
   "devices": [
-    { "device_id": 2001, "kind": "h2s_json", "topic": "h2s/devices/2001/status", "role": "CONSUMPTION" },
-    { "device_id": 2002, "kind": "h2s_json", "topic": "h2s/devices/2002/status", "role": "CONSUMPTION" },
-    { "device_id": 2003, "kind": "h2s_json", "topic": "h2s/devices/2003/status", "role": "CONSUMPTION" },
-    { "device_id": 2004, "kind": "h2s_json", "topic": "h2s/devices/2004/status", "role": "CONSUMPTION" },
-    { "device_id": 2005, "kind": "h2s_json", "topic": "h2s/devices/2005/status", "role": "CONSUMPTION" },
-    { "device_id": 2006, "kind": "h2s_json", "topic": "h2s/devices/2006/status", "role": "CONSUMPTION" },
-    { "device_id": 2007, "kind": "h2s_json", "topic": "h2s/devices/2007/status", "role": "CONSUMPTION" },
-    { "device_id": 2008, "kind": "h2s_json", "topic": "h2s/devices/2008/status", "role": "CONSUMPTION" }
+    { "device_id": 8, "kind": "h2s_json", "topic": "h2s/devices/8/status", "role": "CONSUMPTION" },
+    { "device_id": 9, "kind": "h2s_json", "topic": "h2s/devices/9/status", "role": "CONSUMPTION" },
+    { "device_id": 10, "kind": "h2s_json", "topic": "h2s/devices/10/status", "role": "CONSUMPTION" },
+    { "device_id": 11, "kind": "h2s_json", "topic": "h2s/devices/11/status", "role": "CONSUMPTION" },
+    { "device_id": 12, "kind": "h2s_json", "topic": "h2s/devices/12/status", "role": "CONSUMPTION" },
+    { "device_id": 13, "kind": "h2s_json", "topic": "h2s/devices/13/status", "role": "CONSUMPTION" },
+    { "device_id": 14, "kind": "h2s_json", "topic": "h2s/devices/14/status", "role": "CONSUMPTION" },
+    { "device_id": 15, "kind": "h2s_json", "topic": "h2s/devices/15/status", "role": "CONSUMPTION" }
   ],
   "batteries": [
     { "stock_id": 1, "status_topic": "h2s/site4/battery/status", "command_prefix": "h2s/site4/commands" }
