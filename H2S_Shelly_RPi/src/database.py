@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean
 from datetime import datetime
 from .config import DATABASE_URL
 
@@ -18,6 +18,21 @@ class EnergyMinute(Base):
     voltage_v = Column(Float, nullable=True)
     power_w = Column(Float, nullable=True)
     energy_minute_wh = Column(Float, nullable=True)
+
+class BatteryMinute(Base):
+    __tablename__ = "battery_minute"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    stock_id = Column(Integer, index=True)
+    name = Column(String)
+    soc_pct = Column(Float)
+    power_charge_w = Column(Float)
+    power_discharge_w = Column(Float)
+    voltage_v = Column(Float)
+    current_a = Column(Float)
+    temperature_c = Column(Float)
+    is_simulated = Column(Boolean, default=True)
+    action = Column(String, default="STANDBY")
 
 class EnergyHourly(Base):
     __tablename__ = "energy_hourly"

@@ -21,7 +21,8 @@ from .config import (
     MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_USER, MQTT_PASSWORD,
     MQTT_CLIENT_ID, AGENT_UUID,
     MQTT_TOPIC_TELEMETRIE, MQTT_TOPIC_COMPTES_RENDUS,
-    MQTT_TOPIC_ETAT, MQTT_TOPIC_ORDRES
+    MQTT_TOPIC_ETAT, MQTT_TOPIC_ORDRES,
+    MQTT_TOPIC_BATTERY_STATUS
 )
 
 logger = logging.getLogger(__name__)
@@ -173,6 +174,72 @@ def publish_energy_hourly(device_id, device_name, avg_current_a, avg_voltage_v,
         _publish_raw(MQTT_TOPIC_COMPTES_RENDUS, payload)
 
     logger.debug(f"Compte-rendu published for {device_name} ({capteur_prefix})")
+
+def publish_battery_minute(stock_id: int, battery_name: str, soc_pct: float,
+                           power_charge_w: float, power_discharge_w: float,
+                           voltage_v: float, current_a: float, temperature_c: float,
+                           timestamp=None):
+    """
+    Publish granular battery readings to telemetry topic in standard H2S sensor packet format.
+    """
+    capteur_prefix = f"battery-{stock_id}"
+    readings = [
+        (round(soc_pct, 2),             "%",   f"{capteur_prefix}-soc"),
+        (round(power_charge_w, 1),      "W",   f"{capteur_prefix}-charge-power"),
+        (round(power_discharge_w, 1),   "W",   f"{capteur_prefix}-discharge-power"),
+        (round(voltage_v, 1),           "V",   f"{capteur_prefix}-voltage"),
+        (round(current_a, 3),           "A",   f"{capteur_prefix}-current"),
+        (round(temperature_c, 1),       "°C",  f"{capteur_prefix}-temperature"),
+    ]
+
+    for valeur, unite, capteur_id in readings:
+        payload = _make_payload_dict(valeur, unite, capteur_id, timestamp)
+        _publish_raw(MQTT_TOPIC_TELEMETRIE, payload)
+
+    logger.debug(f"Battery telemetrie published for {battery_name} ({capteur_prefix})")
+
+def publish_battery_status_h2s(stock_id: int, soc_pct: float,
+                               power_charge_w: float, power_discharge_w: float,
+                               voltage_v: float, current_a: float, temperature_c: float,
+                               timestamp=None):
+    """
+    Publish full status payload to local Mosquitto topic (e.g. h2s/site4/battery/status)
+    so h2s_agent's collector ingests it directly for local storage, signed buffer, and live telemetry.
+    """
+    if timestamp is None:
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    elif hasattr(timestamp, "strftime"):
+        ts = timestamp.strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        ts = str(timestamp)
+        if not ts.endswith("Z"):
+            ts += "Z"
+
+    battery_payload = {
+        "timestamp": ts,
+        "stock_id": stock_id,
+        "soc_pct": round(soc_pct, 2),
+        "power_charge_w": round(power_charge_w, 1),
+        "power_discharge_w": round(power_discharge_w, 1),
+        "voltage_v": round(voltage_v, 1),
+        "current_a": round(current_a, 3),
+        "temperature_c": round(temperature_c, 1),
+    }
+    _publish_raw(MQTT_TOPIC_BATTERY_STATUS, battery_payload)
+    logger.debug(f"H2S local battery status published to {MQTT_TOPIC_BATTERY_STATUS}")
+
+def publish_decision_report(action: str, details: dict, timestamp=None):
+    """
+    Publish relay execution and decision outcome to comptes-rendus topic.
+    """
+    report_payload = _make_payload_dict(
+        valeur=json.dumps(details),
+        unite="",
+        capteur_id=f"decision-{action.lower()}",
+        timestamp=timestamp
+    )
+    _publish_raw(MQTT_TOPIC_COMPTES_RENDUS, report_payload)
+    logger.info(f"Decision report for {action} published to {MQTT_TOPIC_COMPTES_RENDUS}")
 
 def publish_etat(extra: dict = None):
     ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

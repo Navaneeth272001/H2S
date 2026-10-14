@@ -55,6 +55,14 @@ The per-agent namespace enforced by broker ACL (`<uuid>` = `AGENT_UUID`):
 *   `ghi`: Global Horizontal Irradiance (W/m²)
 *   `condition`: Weather condition description (String)
 
+**Battery Measurements (Jackery / Physical & Simulated):**
+*   `soc_pct`: State of Charge (%)
+*   `power_charge_w`: Active Charging Power (Watts)
+*   `power_discharge_w`: Active Discharging Power (Watts)
+*   `voltage_v`: Inverter Output Voltage (Volts)
+*   `current_a`: Battery Current (Amperes)
+*   `temperature_c`: Battery Pack Temperature (Celsius)
+
 ### 6. Federated Learning Gradients
 *   **Model**: LightGBM Regressor
 *   **Format**: Histogram gradients and tree parameters serialized as NumPy arrays (transported via Flower framework).

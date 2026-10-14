@@ -1,0 +1,364 @@
+{
+  "agent_seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "agent_public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+  "method": "POST",
+  "path": "/api/agent/sync/buffer?x=1",
+  "timestamp": 1789000000,
+  "nonce": "0123456789abcdef0123456789abcdef",
+  "body": "{\"records\":[]}",
+  "canonical": "H2S-AGENT-V1\nPOST\n/api/agent/sync/buffer?x=1\n1789000000\n0123456789abcdef0123456789abcdef\n1b8b4c0b6f6ad1d32565952720bc004eeb1f188f62045e4d5525ae2af8c78432",
+  "signature": "J8JSolnS1Bl_AYNLerlex3fMa5wk418x4jpQSeJsGwsW9dsWiRF5Syhtld6qF6aIcGyFb24TGL-oo0dKZyhFCA",
+  "cloud_public_key": "9Fn-3G35sKkmxgqBksDI6-zd4jyz1JxKTacnJuhvXQw",
+  "cloud_message": "h2s",
+  "cloud_signature": "uTwFRNjdUt90rQV2BwFzbDKf10-f2EdYN_CitQrsHO9x-OFLN38eiVGbQKBziUoXEA_aHp8LZRTKeHi4pfcWCA",
+  "gradient_public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwrBPhblDz/ke0TwcDP8GIZhtwL8ymY0GYpiF4W9T8hM3hQPVoCL587Otlho88jK6Zt3AIzT/iUgWI3O2EbpCIrosPVdSpuy0GvkjHyQxb6ebG4MOfbEwwBeSHZehtNwCNC2iIyOXI/L7QrIs6a6UJP3IyWtga5nCKsfLEtSz/WhbWFUXcX+FP9t3ajpLZk7M+Ufk89+bjIN1Uq8czrUnDsuR4UjYJGfj8VG7YL/VsyMuvTiankZtSKcI92FkgzWMeYEhZj5pz1+WrZx3vJY0EcqKGi9MBi9Ojn1CCPhPEH6Yc8n10fI/6pAFwxMi1VLe+6FwT0rznC34q1wLdddJGQIDAQAB",
+  "envelope": {
+    "alg": "RSA-OAEP-256+A256GCM",
+    "encrypted_key": "rru1BIU+u1m7saoDH/J5wqt98RjbMjm8o6d06p1YYlNXAFaUqqWU5fnhWnGMQblfQN3HYaEwg+BiqU9bIjE8Ar8tbYRXdd87DylPF6mZM5xgm6/DMXJ8/1kXMv6ge5AtPDRqjOngDYo4cXNE+LeHfLtC/EBDEVosqwd+3m/TO2+M7i6L/ZD1hIc2xgirL7IZYtv/+El2K/ozTlhWezPWWOw7UlWqrxBk/1iFdc33trNxXdiuWH3gCVUDWp6kIFS82zSvk1ZtEevYo1YvSPB/8VmFq7R+9fvLKw3d9k6euT/mZSS11zoEhMPVIQHU0xaWb38+lHT62/PojhEWXz+xZg==",
+    "iv": "RiQ3XeYSeZ3X3sCo",
+    "ciphertext": "zJ/LmSNrN2VQv7DJj126AfxycK1jcS/I8XQNbNUpUBQ85ySZQwEOlk/fGOBhDHslbvGo3+n1c5bIb7pSRQMGsAMxHC723HgTbKOwoE1PUT6cK93tMEEcnoJl98SlkWUt6qwOAbbBGetRp/JfZUaIZr8U95zKjx9zbk3JehnkLQFfpzKCMLEijcV4LNmaYMyz+WML+uF4QuSQYVw="
+  },
+  "envelope_clear": "{\"features\":[\"bias\",\"hour_sin\",\"hour_cos\",\"weekday_sin\",\"weekday_cos\",\"is_weekend\",\"lag_1h\",\"lag_24h\"],\"delta\":[0.5,0,0,0,0,0,0.25,-0.125]}",
+  "sec_rules": {
+    "description": "Verdicts SEC1-6 communs (R5-07, CDC §5.2) : com.h2s.battery.rules.RuleEngine (EdgeModelTest#reglesSecCommunes) et h2s_agent/rules.py (test_model.py::TestRules::test_vecteurs_communs). Refus à la borne exacte : décharge à SoC ≤ soc_min, charge à SoC ≥ soc_max. elapsed_s : secondes depuis la dernière transition (null : aucune).",
+    "vectors": [
+      {
+        "name": "décharge à 15 % exactement → SEC2",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "DISCHARGE",
+        "power_w": 100,
+        "soc": 15,
+        "current_state": "STANDBY",
+        "elapsed_s": null,
+        "valid": false,
+        "rule": "SEC2",
+        "power_w_out": 0
+      },
+      {
+        "name": "décharge à 15,1 % → admise",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "DISCHARGE",
+        "power_w": 100,
+        "soc": 15.1,
+        "current_state": "STANDBY",
+        "elapsed_s": null,
+        "valid": true,
+        "rule": null,
+        "power_w_out": 100
+      },
+      {
+        "name": "décharge à 14,9 % → SEC2",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "DISCHARGE",
+        "power_w": 100,
+        "soc": 14.9,
+        "current_state": "STANDBY",
+        "elapsed_s": null,
+        "valid": false,
+        "rule": "SEC2",
+        "power_w_out": 0
+      },
+      {
+        "name": "charge à 95 % exactement → SEC3",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "CHARGE",
+        "power_w": 100,
+        "soc": 95,
+        "current_state": "STANDBY",
+        "elapsed_s": null,
+        "valid": false,
+        "rule": "SEC3",
+        "power_w_out": 0
+      },
+      {
+        "name": "charge à 94,9 % → admise",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "CHARGE",
+        "power_w": 100,
+        "soc": 94.9,
+        "current_state": "STANDBY",
+        "elapsed_s": null,
+        "valid": true,
+        "rule": null,
+        "power_w_out": 100
+      },
+      {
+        "name": "charge à 12 % → SEC2 ne concerne pas la charge",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "CHARGE",
+        "power_w": 100,
+        "soc": 12,
+        "current_state": "STANDBY",
+        "elapsed_s": null,
+        "valid": true,
+        "rule": null,
+        "power_w_out": 100
+      },
+      {
+        "name": "décharge à 96 % → SEC3 ne concerne pas la décharge",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "DISCHARGE",
+        "power_w": 100,
+        "soc": 96,
+        "current_state": "STANDBY",
+        "elapsed_s": null,
+        "valid": true,
+        "rule": null,
+        "power_w_out": 100
+      },
+      {
+        "name": "charge pendant une décharge → SEC1",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "CHARGE",
+        "power_w": 100,
+        "soc": 50,
+        "current_state": "DISCHARGE",
+        "elapsed_s": null,
+        "valid": false,
+        "rule": "SEC1",
+        "power_w_out": 0
+      },
+      {
+        "name": "transition après 29 s → SEC6",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "CHARGE",
+        "power_w": 100,
+        "soc": 50,
+        "current_state": "STANDBY",
+        "elapsed_s": 29,
+        "valid": false,
+        "rule": "SEC6",
+        "power_w_out": 0
+      },
+      {
+        "name": "transition après 30 s exactement → admise",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "CHARGE",
+        "power_w": 100,
+        "soc": 50,
+        "current_state": "STANDBY",
+        "elapsed_s": 30,
+        "valid": true,
+        "rule": null,
+        "power_w_out": 100
+      },
+      {
+        "name": "maintien de l'état après 5 s → pas de SEC6",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "CHARGE",
+        "power_w": 100,
+        "soc": 50,
+        "current_state": "CHARGE",
+        "elapsed_s": 5,
+        "valid": true,
+        "rule": null,
+        "power_w_out": 100
+      },
+      {
+        "name": "charge de 800 W → SEC4 ramène à 500 W",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "CHARGE",
+        "power_w": 800,
+        "soc": 50,
+        "current_state": "STANDBY",
+        "elapsed_s": null,
+        "valid": true,
+        "rule": null,
+        "power_w_out": 500
+      },
+      {
+        "name": "décharge de 1 500 W → SEC5 ramène à 1 000 W",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "DISCHARGE",
+        "power_w": 1500,
+        "soc": 50,
+        "current_state": "STANDBY",
+        "elapsed_s": null,
+        "valid": true,
+        "rule": null,
+        "power_w_out": 1000
+      },
+      {
+        "name": "veille toujours admise, même à SoC inconnu",
+        "thresholds": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "STANDBY",
+        "power_w": 0,
+        "soc": null,
+        "current_state": "DISCHARGE",
+        "elapsed_s": 1,
+        "valid": true,
+        "rule": null,
+        "power_w_out": 0
+      },
+      {
+        "name": "seuil de site plus strict : décharge à 20 % avec soc_min 20 → SEC2",
+        "thresholds": {
+          "soc_min": 20,
+          "soc_max": 95,
+          "p_charge_max_w": 500,
+          "p_discharge_max_w": 1000,
+          "min_interval_s": 30
+        },
+        "action": "DISCHARGE",
+        "power_w": 100,
+        "soc": 20,
+        "current_state": "STANDBY",
+        "elapsed_s": null,
+        "valid": false,
+        "rule": "SEC2",
+        "power_w_out": 0
+      }
+    ]
+  },
+  "sec_bounds": {
+    "description": "Seuils reçus du cloud ramenés dans les bornes absolues du cahier des charges (R5-06, R5-08) : SoC 15–95 %, délai SEC6 ≥ 30 s ; un seuil plus strict est conservé. AutoPolicy.Thresholds.of côté cloud (EdgeModelTest#bornesSecCommunes), rules.Thresholds.bounded côté agent.",
+    "vectors": [
+      {
+        "name": "seuils conformes inchangés",
+        "received": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "min_interval_s": 30
+        },
+        "effective": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "min_interval_s": 30
+        }
+      },
+      {
+        "name": "soc_min 10 → 15, soc_max 100 → 95, délai 10 s → 30 s",
+        "received": {
+          "soc_min": 10,
+          "soc_max": 100,
+          "min_interval_s": 10
+        },
+        "effective": {
+          "soc_min": 15,
+          "soc_max": 95,
+          "min_interval_s": 30
+        }
+      },
+      {
+        "name": "plus strict conservé",
+        "received": {
+          "soc_min": 20,
+          "soc_max": 90,
+          "min_interval_s": 60
+        },
+        "effective": {
+          "soc_min": 20,
+          "soc_max": 90,
+          "min_interval_s": 60
+        }
+      }
+    ]
+  },
+  "command_secret": {
+    "description": "Mot de passe Wi-Fi d'une commande WIFI_CONFIG chiffré pour l'agent (E020) : X25519 (clé éphémère du cloud, clé de commande de l'agent), HKDF-SHA256 (sel = clé éphémère ‖ clé de l'agent, info H2S-COMMAND-SECRET-V1), AES-256-GCM (données associées : identifiant de la commande). DeviceCommandCryptoTest côté cloud, test_commandes.py côté agent.",
+    "agent_private_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+    "agent_public": "NYBy1jZYgNGu6jKa35EhODhR7SGijjt16WXQ0s0WYlQ",
+    "ephemeral_private_hex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+    "command_id": "5b1d2c3e-4f50-4a6b-8c7d-9e0f1a2b3c4d",
+    "clear": "mot-de-passe-wifi-8",
+    "envelope": {
+      "alg": "X25519-HKDF-SHA256+A256GCM",
+      "epk": "eaYx7t4b-cmPEgMs3q3Q56B5OY_HhriMyEbsia-FpRo",
+      "iv": "AAECAwQFBgcICQoL",
+      "ct": "SMoTWJ5feqyCdN2OkAbXRNQhAtEh_FbU3nIoFD0San4Vyd8"
+    }
+  },
+  "mqtt_message": {
+    "commentaire": "Message MQTT signé (lot 5) : même schéma H2S-AGENT-V1 que les requêtes, méthode MQTT, sujet en chemin.",
+    "topic": "h2s/agents/3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d/telemetrie",
+    "timestamp": 1789000000,
+    "nonce": "0123456789abcdef0123456789abcdef",
+    "payload": "{\"v\":1,\"type\":\"live\",\"site_id\":4,\"measured_at\":\"2026-09-14T07:59:57Z\",\"production_w\":1200.0,\"consumption_w\":300.0}",
+    "canonical": "H2S-AGENT-V1\nMQTT\nh2s/agents/3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d/telemetrie\n1789000000\n0123456789abcdef0123456789abcdef\n9079606e097771af69c1f5ed5f02352933caa0bee422b3837f2d581df872f941",
+    "signature": "S5wbv9qZNr8XxZ_vIumvzf2T7GyfI9aGjJSF5NbqdAftD4eFDucJnB6u4uIQwyScgB61r1hWIXInyeBj7YzrDg"
+  }
+}

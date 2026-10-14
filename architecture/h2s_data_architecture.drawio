@@ -1,0 +1,335 @@
+<mxfile host="app.diagrams.net" agent="Antigravity" version="24.7.0">
+  <diagram id="h2s-arch" name="H2S End-to-End Data Architecture">
+    <mxGraphModel dx="2400" dy="1300" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2300" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ============ TITLE ============ -->
+        <mxCell id="title" value="&lt;b&gt;H2S — End-to-End Data Architecture&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:13px&quot; color=&quot;#555555&quot;&gt;Shelly plugs and external APIs → Raspberry Pi edge agent → signed MQTT over TLS 1.3 → EMQX → agent-sync / PostgreSQL → LightGBM prediction engine → Dashboard, decisions, marketplace, IOTA&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;fontSize=24;" vertex="1" parent="1">
+          <mxGeometry x="20" y="10" width="1600" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============ LAYER CONTAINERS ============ -->
+        <mxCell id="L1" value="1 · DATA SOURCES" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f3fcfd;strokeColor=#00838f;verticalAlign=top;fontStyle=1;fontSize=15;fontColor=#00838f;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="20" y="80" width="260" height="900" as="geometry" />
+        </mxCell>
+        <mxCell id="L2" value="2 · EDGE — RASPBERRY PI GATEWAY (customer LAN)" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f4fbf4;strokeColor=#2e7d32;verticalAlign=top;fontStyle=1;fontSize=15;fontColor=#2e7d32;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="320" y="80" width="480" height="900" as="geometry" />
+        </mxCell>
+        <mxCell id="L3" value="3 · TRANSPORT (edge ⇄ cloud)" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f7f4fc;strokeColor=#5e35b1;verticalAlign=top;fontStyle=1;fontSize=15;fontColor=#5e35b1;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="840" y="80" width="260" height="900" as="geometry" />
+        </mxCell>
+        <mxCell id="L4" value="4 · CLOUD PLATFORM (Java / Quarkus microservices)" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f3f8fe;strokeColor=#1565c0;verticalAlign=top;fontStyle=1;fontSize=15;fontColor=#1565c0;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="80" width="440" height="900" as="geometry" />
+        </mxCell>
+        <mxCell id="L5" value="5 · AI PREDICTION ENGINE" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fdf4f7;strokeColor=#ad1457;verticalAlign=top;fontStyle=1;fontSize=15;fontColor=#ad1457;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="80" width="300" height="900" as="geometry" />
+        </mxCell>
+        <mxCell id="L6" value="6 · CONSUMERS" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fffbf0;strokeColor=#ff8f00;verticalAlign=top;fontStyle=1;fontSize=15;fontColor=#e65100;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1960" y="80" width="280" height="900" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 1. SOURCES ============ -->
+        <mxCell id="shelly" value="&lt;b&gt;Shelly smart plugs ×8&lt;/b&gt;&lt;br&gt;current_a · voltage_v · power_w&lt;br&gt;&lt;i&gt;LIVE&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f7fa;strokeColor=#00838f;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="140" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="openmeteo" value="&lt;b&gt;Open-Meteo Forecast API&lt;/b&gt;&lt;br&gt;temp · humidity · wind · rain · GHI · condition&lt;br&gt;&lt;i&gt;LIVE (hourly)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f7fa;strokeColor=#00838f;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="260" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="epex" value="&lt;b&gt;Energy-Charts (EPEX FR)&lt;/b&gt;&lt;br&gt;Day-ahead spot price EUR/MWh&lt;br&gt;&lt;i&gt;training data&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f7fa;strokeColor=#00838f;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="380" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="archive" value="&lt;b&gt;Open-Meteo Archive / Previous-Runs&lt;/b&gt;&lt;br&gt;ERA5 history + archived NWP forecasts&lt;br&gt;&lt;i&gt;training data&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f7fa;strokeColor=#00838f;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="500" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="sim" value="&lt;b&gt;Simulated assets&lt;/b&gt;&lt;br&gt;PV 200 W · Wind 200 W · Battery 2.2 kWh&lt;br&gt;&lt;i&gt;derived from GHI / wind&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f7fa;strokeColor=#00838f;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="620" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="grid" value="&lt;b&gt;Enedis · RTE&lt;/b&gt;&lt;br&gt;Grid meter data and grid signals&lt;br&gt;&lt;i&gt;via cloud connectors&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f7fa;strokeColor=#00838f;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="740" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 2. EDGE ============ -->
+        <mxCell id="collector" value="&lt;b&gt;Collector&lt;/b&gt;&lt;br&gt;main_collector.py (asyncio)&lt;br&gt;60 s poll · minute + hourly aggregation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="340" y="140" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="pgedge" value="&lt;b&gt;Local PostgreSQL 15&lt;/b&gt;&lt;br&gt;energy_minute&lt;br&gt;energy_hourly&lt;br&gt;weather_hourly" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#e8f5e9;strokeColor=#2e7d32;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="350" y="280" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="notifier" value="&lt;b&gt;Alert notifier&lt;/b&gt;&lt;br&gt;SMTP 587 (STARTTLS)&lt;br&gt;device offline ≥ 2 polls" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="340" y="420" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="flclient" value="&lt;b&gt;Federated-learning client&lt;/b&gt;&lt;br&gt;Flower + LightGBM (fl_client.py)&lt;br&gt;&lt;i&gt;PLACEHOLDER&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="540" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="mosq" value="&lt;b&gt;Mosquitto (local broker)&lt;/b&gt;&lt;br&gt;1883 loopback · 8883 TLS LAN&lt;br&gt;raw JSON, unsigned" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="580" y="140" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="agent" value="&lt;b&gt;h2s_agent&lt;/b&gt;&lt;br&gt;collect → buffer → &lt;b&gt;sign&lt;/b&gt; → forward&lt;br&gt;heartbeat · orders · model download&lt;br&gt;systemd h2s-agent.service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#1b5e20;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="580" y="270" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="buffer" value="&lt;b&gt;Offline buffer&lt;/b&gt;&lt;br&gt;persistent, up to 7 days" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#e8f5e9;strokeColor=#2e7d32;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="600" y="420" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="keys" value="&lt;b&gt;Key store&lt;/b&gt;&lt;br&gt;Ed25519 file key (0600) today&lt;br&gt;TPM 2.0 Infineon SLB9672 (target)&lt;br&gt;+ X25519 key for sealed secrets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="580" y="530" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="edgenote" value="&lt;b&gt;Edge notes&lt;/b&gt;&lt;br&gt;• Runtime: Docker Compose (postgres + collector) / systemd&lt;br&gt;• Outbound only: TCP 8883 to cloud, no inbound port&lt;br&gt;• NTP (chrony) required: cloud rejects ts outside ±5 min&lt;br&gt;• Enrollment: one-time code → agent creates its own UUID + Ed25519 key&lt;br&gt;• MQTT publish (collector → Mosquitto): telemetrie (minute), comptes-rendus (hourly), etat (60 s heartbeat)" style="shape=note;whiteSpace=wrap;html=1;size=14;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;fillColor=#ffffff;strokeColor=#2e7d32;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="340" y="680" width="440" height="160" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 3. TRANSPORT ============ -->
+        <mxCell id="emqx" value="&lt;b&gt;EMQX cloud broker&lt;/b&gt;&lt;br&gt;mqtt.dev.h2splug.com:8883&lt;br&gt;MQTT 5 · TLS 1.3 only&lt;br&gt;Let's Encrypt cert · deny-by-default ACL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#4527a0;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="860" y="260" width="220" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="https" value="&lt;b&gt;HTTPS agent API&lt;/b&gt;&lt;br&gt;/api/agent/register · heartbeat · sync · models · commands&lt;br&gt;signed headers · TLS ≥ 1.3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede7f6;strokeColor=#5e35b1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="860" y="430" width="220" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="topics" value="&lt;b&gt;Topics (QoS 1, retain=false)&lt;/b&gt;&lt;br&gt;h2s/agents/&amp;lt;uuid&amp;gt;/&lt;br&gt;• telemetrie → cloud&lt;br&gt;• comptes-rendus → cloud&lt;br&gt;• etat → cloud&lt;br&gt;• ordres ← cloud (subscribe only)&lt;br&gt;&lt;br&gt;&lt;b&gt;Signed envelope&lt;/b&gt;&lt;br&gt;{v, agent, ts, nonce, payload, sig}&lt;br&gt;sig = Ed25519 over&lt;br&gt;H2S-AGENT-V1 | MQTT | topic | ts | nonce | SHA-256(payload)" style="shape=note;whiteSpace=wrap;html=1;size=14;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;fillColor=#ffffff;strokeColor=#5e35b1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="580" width="220" height="250" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 4. CLOUD ============ -->
+        <mxCell id="agentsync" value="&lt;b&gt;agent-sync&lt;/b&gt;&lt;br&gt;Vert.x MQTT consumer&lt;br&gt;verify signature · nonce · ts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#0d47a1;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="270" width="190" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="gateway" value="&lt;b&gt;Internal gateway&lt;/b&gt;&lt;br&gt;h2s-passerelle · prefix routing&lt;br&gt;Ed25519 internal identity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="140" width="190" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="pgcloud" value="&lt;b&gt;PostgreSQL 16 + PostGIS&lt;/b&gt;&lt;br&gt;edge_clients · edge_nonces&lt;br&gt;edge_raw_readings · edge_messages&lt;br&gt;predictions · storages · ledger" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="420" width="190" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="twin" value="&lt;b&gt;digital-twin + rule-engine&lt;/b&gt;&lt;br&gt;Battery EKF / Thévenin 2RC&lt;br&gt;charge / discharge decisions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="270" width="190" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="outbox" value="&lt;b&gt;Transactional outbox&lt;/b&gt;&lt;br&gt;h2s-evenements (no Kafka)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="430" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="keycloak" value="&lt;b&gt;Keycloak (OIDC)&lt;/b&gt;&lt;br&gt;end-user auth / JWT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="560" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="prom" value="&lt;b&gt;Prometheus metrics&lt;/b&gt;&lt;br&gt;h2s_mqtt_* (:9000)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="560" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="connectors" value="&lt;b&gt;enedis-connector · rte-connector&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="650" width="190" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="secnote" value="&lt;b&gt;Cloud-side checks on every envelope&lt;/b&gt;&lt;br&gt;• timestamp within ±5 min&lt;br&gt;• agent enrolled and not revoked (edge_clients)&lt;br&gt;• signature valid against enrolled public key&lt;br&gt;• nonce never seen (edge_nonces, purged hourly)&lt;br&gt;• topic belongs to the agent · envelope ≤ 256 KB · ≤ 5 000 msg/h&lt;br&gt;• idempotence via message_id (QoS 1 duplicates)&lt;br&gt;• unsigned raw JSON is dropped" style="shape=note;whiteSpace=wrap;html=1;size=14;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;fillColor=#ffffff;strokeColor=#1565c0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="730" width="400" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 5. AI ============ -->
+        <mxCell id="features" value="&lt;b&gt;Data prep and features&lt;/b&gt;&lt;br&gt;hourly resample · lags · moving avg&lt;br&gt;sin/cos calendar · weather · price" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#ad1457;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1640" y="140" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="models" value="&lt;b&gt;8 × LightGBM regressors&lt;/b&gt;&lt;br&gt;production_1h / 24h · consumption_1h / 24h_fallback&lt;br&gt;weather_1h / 24h · price_1h / 24h&lt;br&gt;trained_models/*.pkl + metrics.json&lt;br&gt;served by ai-engine (FastAPI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8bbd0;strokeColor=#880e4f;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1640" y="270" width="260" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="tuning" value="&lt;b&gt;Tuning and validation&lt;/b&gt;&lt;br&gt;Optuna TPE (30 trials) · early stop 100&lt;br&gt;TimeSeriesSplit ×5 · purged chrono splits&lt;br&gt;naive / RNN baselines" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#ad1457;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1640" y="430" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="confidence" value="&lt;b&gt;Confidence and peaks&lt;/b&gt;&lt;br&gt;MAE per decile → score %&lt;br&gt;High ≥ 85 · Medium ≥ 70 · Low&lt;br&gt;peak flag &amp;gt; P90" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#ad1457;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1640" y="560" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="flserver" value="&lt;b&gt;Federated aggregation&lt;/b&gt;&lt;br&gt;Flower server · 50–250 KB / round&lt;br&gt;&lt;i&gt;PLANNED&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#ad1457;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1640" y="700" width="260" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ============ 6. CONSUMERS ============ -->
+        <mxCell id="dashboard" value="&lt;b&gt;H2S Dashboard&lt;/b&gt;&lt;br&gt;live + forecast: production, consumption, battery, price&lt;br&gt;HTTPS · OIDC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe082;strokeColor=#e65100;strokeWidth=2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1980" y="140" width="240" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="orders" value="&lt;b&gt;Orders to the edge&lt;/b&gt;&lt;br&gt;decision / command, cloud-signed&lt;br&gt;idempotent (decision_id)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ff8f00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1980" y="280" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="market" value="&lt;b&gt;P2P marketplace (iota-connector)&lt;/b&gt;&lt;br&gt;matching · settlement · EUR wallets&lt;br&gt;green certificates · local SHA-256 ledger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ff8f00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1980" y="420" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="iotasvc" value="&lt;b&gt;IOTA service&lt;/b&gt; (Node.js / TS)&lt;br&gt;wallets · transactions · reconcile&lt;br&gt;requestId idempotence · no auth yet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ff8f00;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1980" y="560" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="iota" value="&lt;b&gt;IOTA Rebased&lt;/b&gt;&lt;br&gt;Devnet only" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;size=0.15;fillColor=#fff8e1;strokeColor=#ff8f00;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="2010" y="700" width="180" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ============ EDGES ============ -->
+        <!-- sources -> edge -->
+        <mxCell id="e1" value="HTTP GET /rpc/Switch.GetStatus&lt;br&gt;LAN · no auth · every 60 s" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#00838f;" edge="1" parent="1" source="shelly" target="collector">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="HTTPS REST · hourly" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#00838f;exitX=1;exitY=0.5;entryX=0.25;entryY=1;" edge="1" parent="1" source="openmeteo" target="collector">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="300" y="300" /><mxPoint x="300" y="245" /><mxPoint x="390" y="245" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- inside edge -->
+        <mxCell id="e3" value="SQL (asyncpg)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#2e7d32;exitX=0.6;exitY=1;entryX=0.6;entryY=0;" edge="1" parent="1" source="collector" target="pgedge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="MQTT 5 · QoS 1&lt;br&gt;1883 loopback · raw JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#2e7d32;" edge="1" parent="1" source="collector" target="mosq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="subscribe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#2e7d32;" edge="1" parent="1" source="mosq" target="agent">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="persist / replay" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;startArrow=block;startFill=1;strokeColor=#2e7d32;" edge="1" parent="1" source="agent" target="buffer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="sign" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#e65100;exitX=1;exitY=0.5;entryX=1;entryY=0.75;" edge="1" parent="1" source="keys" target="agent">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="795" y="575" /><mxPoint x="795" y="345" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" value="alert" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#2e7d32;exitX=0;exitY=0.75;entryX=0;entryY=0.5;" edge="1" parent="1" source="collector" target="notifier">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="330" y="200" /><mxPoint x="330" y="455" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" value="SQL (local training data)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#2e7d32;dashed=1;exitX=0.85;exitY=1;exitDx=0;exitDy=-12;entryX=0.85;entryY=0;" edge="1" parent="1" source="pgedge" target="flclient">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="560" y="380" /><mxPoint x="560" y="520" /><mxPoint x="510" y="520" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- edge -> transport (encrypted) -->
+        <mxCell id="e10" value="&lt;b&gt;MQTT 5 · TLS 1.3 · :8883&lt;/b&gt;&lt;br&gt;QoS 1 · user uuid:secret&lt;br&gt;Ed25519-signed envelope ≤ 256 KB" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#4527a0;strokeWidth=3;exitX=1;exitY=0.3;entryX=0;entryY=0.4;" edge="1" parent="1" source="agent" target="emqx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="ordres (cloud-signed)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ff8f00;strokeWidth=2;dashed=1;exitX=0;exitY=0.8;entryX=1;entryY=0.6;" edge="1" parent="1" source="emqx" target="agent">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="&lt;b&gt;HTTPS · TLS 1.3&lt;/b&gt;&lt;br&gt;signed headers&lt;br&gt;enroll · heartbeat · sync" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;startArrow=block;startFill=1;strokeColor=#4527a0;strokeWidth=2;exitX=0.85;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent" target="https">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="750" y="400" /><mxPoint x="820" y="400" /><mxPoint x="820" y="475" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13" value="Flower gRPC · gradients 50–250 KB (planned)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ad1457;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="1" source="flclient" target="flserver">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="440" y="1060" /><mxPoint x="1770" y="1060" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- transport -> cloud -->
+        <mxCell id="e14" value="MQTT subscribe&lt;br&gt;Vert.x · QoS 1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#1565c0;strokeWidth=2;exitX=1;exitY=0.4;entryX=0;entryY=0.5;" edge="1" parent="1" source="emqx" target="agentsync">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" value="REST" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#1565c0;exitX=1;exitY=0.25;entryX=0;entryY=0.5;" edge="1" parent="1" source="https" target="gateway">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1120" y="452" /><mxPoint x="1120" y="180" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- inside cloud -->
+        <mxCell id="e16" value="verified readings&lt;br&gt;→ edge_raw_readings" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#1565c0;" edge="1" parent="1" source="agentsync" target="pgcloud">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;endArrow=block;endFill=1;strokeColor=#1565c0;" edge="1" parent="1" source="gateway" target="twin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" value="events" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#1565c0;" edge="1" parent="1" source="twin" target="outbox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19" value="metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#1565c0;dashed=1;exitX=0;exitY=0.75;entryX=0;entryY=0.5;" edge="1" parent="1" source="agentsync" target="prom">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1150" y="337" /><mxPoint x="1150" y="590" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e20" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;endArrow=block;endFill=1;strokeColor=#1565c0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="pgcloud" target="outbox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21" value="OIDC / JWT" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#1565c0;dashed=1;exitX=1;exitY=0.5;entryX=1;entryY=0.75;" edge="1" parent="1" source="keycloak" target="gateway">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1570" y="590" /><mxPoint x="1570" y="200" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e22" value="grid data" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#00838f;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="1" source="grid" target="connectors">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="150" y="1000" /><mxPoint x="1120" y="1000" /><mxPoint x="1120" y="715" /><mxPoint x="1255" y="715" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- cloud -> AI -->
+        <mxCell id="e23" value="hourly series&lt;br&gt;HTTP REST (FastAPI)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ad1457;strokeWidth=2;exitX=1;exitY=0.15;exitDx=0;exitDy=0;entryX=0;entryY=0.5;" edge="1" parent="1" source="pgcloud" target="features">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1600" y="436" /><mxPoint x="1600" y="180" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e24" value="training data (HTTPS, cached CSV)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#00838f;dashed=1;exitX=1;exitY=0.5;entryX=0.1;entryY=0;" edge="1" parent="1" source="epex" target="features">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="290" y="420" /><mxPoint x="290" y="100" /><mxPoint x="1666" y="100" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e25" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;endArrow=none;strokeColor=#00838f;dashed=1;exitX=1;exitY=0.5;" edge="1" parent="1" source="archive">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="290" y="420" as="targetPoint" />
+            <Array as="points"><mxPoint x="290" y="540" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e26" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;endArrow=none;strokeColor=#00838f;dashed=1;exitX=1;exitY=0.5;" edge="1" parent="1" source="sim">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="290" y="540" as="targetPoint" />
+            <Array as="points"><mxPoint x="290" y="660" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- inside AI -->
+        <mxCell id="e27" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#ad1457;" edge="1" parent="1" source="features" target="models">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e28" value="hyper-params" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ad1457;" edge="1" parent="1" source="tuning" target="models">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e29" value="predictions" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ad1457;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="models" target="confidence">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1910" y="325" /><mxPoint x="1910" y="600" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e30" value="global model" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ad1457;dashed=1;exitX=0;exitY=0.5;entryX=0;entryY=0.75;" edge="1" parent="1" source="flserver" target="models">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1630" y="735" /><mxPoint x="1630" y="352" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- -> consumers -->
+        <mxCell id="e31" value="forecasts + confidence&lt;br&gt;REST/JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#e65100;strokeWidth=2;exitX=0.75;exitY=1;entryX=0;entryY=0.75;" edge="1" parent="1" source="confidence" target="dashboard">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1835" y="660" /><mxPoint x="1940" y="660" /><mxPoint x="1940" y="207" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e32" value="HTTPS · OIDC/JWT · live data" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#e65100;strokeWidth=2;exitX=0.5;exitY=0;entryX=0.5;entryY=0;" edge="1" parent="1" source="gateway" target="dashboard">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1465" y="120" /><mxPoint x="2100" y="120" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e33" value="decisions" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ff8f00;exitX=1;exitY=0.7;entryX=0;entryY=0.5;" edge="1" parent="1" source="twin" target="orders">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1590" y="333" /><mxPoint x="1590" y="250" /><mxPoint x="1950" y="250" /><mxPoint x="1950" y="320" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e34" value="publish on h2s/agents/&amp;lt;uuid&amp;gt;/ordres · signed by cloud command key" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ff8f00;strokeWidth=2;dashed=1;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="orders" target="emqx">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="2260" y="320" /><mxPoint x="2260" y="60" /><mxPoint x="970" y="60" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e35" value="/api/exchange" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ff8f00;exitX=1;exitY=0.75;entryX=0;entryY=0.5;" edge="1" parent="1" source="outbox" target="market">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1580" y="475" /><mxPoint x="1580" y="530" /><mxPoint x="1940" y="530" /><mxPoint x="1940" y="460" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e36" value="REST/JSON + requestId&lt;br&gt;(planned, no auth yet)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ff8f00;dashed=1;" edge="1" parent="1" source="market" target="iotasvc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e37" value="@iota/iota-sdk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=9;labelBackgroundColor=#ffffff;endArrow=block;endFill=1;strokeColor=#ff8f00;dashed=1;" edge="1" parent="1" source="iotasvc" target="iota">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ============ LEGEND ============ -->
+        <mxCell id="legend" value="&lt;b&gt;Legend&lt;/b&gt;&lt;br&gt;━━ solid line = implemented / live&amp;nbsp;&amp;nbsp;&amp;nbsp; ┅┅ dashed = planned, placeholder or training-only&amp;nbsp;&amp;nbsp;&amp;nbsp; thick purple = encrypted edge→cloud channel (TLS 1.3)&amp;nbsp;&amp;nbsp;&amp;nbsp; orange dashed = control loop (cloud-signed orders)&lt;br&gt;&lt;b&gt;Known gaps:&lt;/b&gt; no AES-256-GCM payload encryption found in code (TLS + Ed25519 signature only) · TPM not yet active (software key) · Mosquitto example still TLS 1.2 · collector order handler is TODO · FL client is a stub · dashboard UI lives in the platform repo · IOTA service Devnet-only, no auth" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=11;fillColor=#fafafa;strokeColor=#bdbdbd;rounded=1;arcSize=4;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1090" width="2220" height="80" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -13,3 +13,13 @@ venv/
 
 # OS
 .DS_Store
+
+# Local venv and db
+H2S_Shelly_RPi/bin/
+H2S_Shelly_RPi/lib/
+H2S_Shelly_RPi/lib64/
+H2S_Shelly_RPi/include/
+H2S_Shelly_RPi/pyvenv.cfg
+*.db
+*.sqlite
+.pytest_cache/

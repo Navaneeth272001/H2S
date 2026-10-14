@@ -1,0 +1,44 @@
+# Service systemd de l'agent local H2S (brique 18). Copier dans /etc/systemd/system/, puis :
+#   systemctl daemon-reload && systemctl enable --now h2s-agent
+# Directives de durcissement standard systemd ; non vérifié sur boîtier réel (aucun Raspberry Pi disponible en recette).
+[Unit]
+Description=Agent local H2S
+After=network-online.target postgresql.service mosquitto.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=h2s-agent
+Group=h2s-agent
+WorkingDirectory=/opt/h2s-agent
+ExecStartPre=/opt/h2s-agent/venv/bin/python -m h2s_agent migrate --config /etc/h2s-agent/agent.json
+ExecStart=/opt/h2s-agent/venv/bin/python -m h2s_agent run --config /etc/h2s-agent/agent.json
+Restart=always
+RestartSec=10
+# Le service s'arrête proprement : l'agent passe les batteries en veille (SAFE_STANDBY) avant de sortir.
+TimeoutStopSec=30
+KillSignal=SIGTERM
+# Bytecode hors du paquet, dans le /tmp privé du service : un .pyc déposé dans h2s_agent/__pycache__ n'est jamais chargé,
+# le manifeste signé couvre donc tout ce qui s'exécute du paquet (D258).
+Environment=PYTHONPYCACHEPREFIX=/tmp/h2s-agent-pycache
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+ReadWritePaths=/var/lib/h2s-agent
+ReadOnlyPaths=/etc/h2s-agent /opt/h2s-agent
+
+[Install]
+WantedBy=multi-user.target

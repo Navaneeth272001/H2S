@@ -4,23 +4,60 @@ import logging
 import signal
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from src.config import SHELLY_DEVICES, POLL_INTERVAL, MINUTES_PER_HOUR, TIMEZONE, MAX_ERRORS, HEARTBEAT_INTERVAL
-from src.database import init_db, AsyncSessionLocal, EnergyMinute, EnergyHourly, WeatherHourly
+from src.config import (
+    SHELLY_DEVICES, POLL_INTERVAL, MINUTES_PER_HOUR, TIMEZONE, MAX_ERRORS, HEARTBEAT_INTERVAL,
+    BATTERY_ENABLED, BATTERY_STOCK_ID, BATTERY_NAME, SHELLY_PRIORITY_IDS
+)
+from src.database import init_db, AsyncSessionLocal, EnergyMinute, EnergyHourly, WeatherHourly, BatteryMinute
 from src.collector import fetch_shelly, fetch_weather
+from src.battery import get_battery_manager
+from src.shelly_control import execute_battery_decision
 from src.notifier import send_email
 from src.mqtt_publisher import (
     publish_energy_minute, publish_energy_hourly,
     publish_weather_hourly, publish_etat,
+    publish_battery_minute, publish_battery_status_h2s, publish_decision_report,
     set_ordres_callback, get_mqtt_client, disconnect_mqtt
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("main_collector")
 
+_main_loop = None
+_http_session = None
+
 def _handle_ordre(data: dict):
-    """Callback for incoming cloud → Pi orders on the ordres topic."""
-    logger.info(f"Received ordre from cloud: {data}")
-    # TODO: implement command dispatch (e.g. reboot, config update, OTA)
+    """Callback for incoming cloud/agent orders on the ordres topic (or local decision)."""
+    logger.info(f"Received ordre payload: {data}")
+    # Extract action: directly or from inner payload
+    action = None
+    if isinstance(data, dict):
+        if "action" in data:
+            action = str(data["action"])
+        elif "payload" in data and isinstance(data["payload"], str):
+            try:
+                import json
+                inner = json.loads(data["payload"])
+                action = inner.get("action")
+            except Exception:
+                pass
+        elif "command" in data:
+            action = str(data["command"])
+
+    if action and _main_loop and _http_session:
+        action_clean = action.upper().strip()
+        logger.info(f"Dispatching decision action to Shelly relays (Chemin B): {action_clean}")
+        coro = _execute_and_report_decision(action_clean)
+        asyncio.run_coroutine_threadsafe(coro, _main_loop)
+
+async def _execute_and_report_decision(action: str):
+    try:
+        battery_mgr = get_battery_manager()
+        battery_mgr.set_action(action)
+        report = await execute_battery_decision(_http_session, action, SHELLY_DEVICES)
+        publish_decision_report(action, report)
+    except Exception as e:
+        logger.error(f"Error executing battery decision {action}: {e}")
 
 
 async def main():
@@ -42,7 +79,12 @@ async def main():
     tz = ZoneInfo(TIMEZONE)
     hour_start = datetime.now(tz).replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
 
+    global _main_loop, _http_session
+    _main_loop = asyncio.get_running_loop()
+    battery_mgr = get_battery_manager()
+
     async with aiohttp.ClientSession() as session:
+        _http_session = session
         while True:
             now = datetime.now(tz)
             
@@ -100,10 +142,62 @@ async def main():
                                 message=f"Device ID: {dev_id} is unreachable."
                             )
                             email_sent[dev_id] = True
+
+                # Process Battery measurements (Physical or Simulated — Chemin B)
+                if BATTERY_ENABLED:
+                    priority_active_load = sum(
+                        res["power_w"] for res in results
+                        if res.get("success") and res.get("device_id") in SHELLY_PRIORITY_IDS and res.get("power_w") is not None
+                    )
+                    b_reading = battery_mgr.update(
+                        active_load_w=priority_active_load,
+                        dt_seconds=POLL_INTERVAL,
+                        timestamp=now
+                    )
+
+                    bm = BatteryMinute(
+                        timestamp=now.replace(tzinfo=None),
+                        stock_id=b_reading.stock_id,
+                        name=b_reading.name,
+                        soc_pct=b_reading.soc_pct,
+                        power_charge_w=b_reading.power_charge_w,
+                        power_discharge_w=b_reading.power_discharge_w,
+                        voltage_v=b_reading.voltage_v,
+                        current_a=b_reading.current_a,
+                        temperature_c=b_reading.temperature_c,
+                        is_simulated=b_reading.is_simulated,
+                        action=b_reading.action
+                    )
+                    db_session.add(bm)
+
+                    # Publish battery telemetrie packet
+                    publish_battery_minute(
+                        stock_id=b_reading.stock_id,
+                        battery_name=b_reading.name,
+                        soc_pct=b_reading.soc_pct,
+                        power_charge_w=b_reading.power_charge_w,
+                        power_discharge_w=b_reading.power_discharge_w,
+                        voltage_v=b_reading.voltage_v,
+                        current_a=b_reading.current_a,
+                        temperature_c=b_reading.temperature_c,
+                        timestamp=now.replace(tzinfo=None)
+                    )
+
+                    # Publish battery status to local broker for h2s_agent
+                    publish_battery_status_h2s(
+                        stock_id=b_reading.stock_id,
+                        soc_pct=b_reading.soc_pct,
+                        power_charge_w=b_reading.power_charge_w,
+                        power_discharge_w=b_reading.power_discharge_w,
+                        voltage_v=b_reading.voltage_v,
+                        current_a=b_reading.current_a,
+                        temperature_c=b_reading.temperature_c,
+                        timestamp=now.replace(tzinfo=None)
+                    )
                             
                 await db_session.commit()
                 
-            logger.info(f"Minute data saved for {len(results)} devices.")
+            logger.info(f"Minute data saved for {len(results)} devices and battery.")
             minute_count += 1
             
             # Hourly processing

@@ -46,19 +46,35 @@ MQTT_TOPIC_ORDRES         = f"h2s/agents/{AGENT_UUID}/ordres"           # cloud 
 # Heartbeat interval (seconds) — DevOps recommends 60s for etat
 HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", 60))
 
+# Battery Configuration (Physical Jackery & Simulation — Chemin B)
+BATTERY_ENABLED = os.getenv("BATTERY_ENABLED", "true").lower() in ("true", "1", "yes")
+BATTERY_STOCK_ID = int(os.getenv("BATTERY_STOCK_ID", "1"))
+BATTERY_NAME = os.getenv("BATTERY_NAME", "Jackery Explorer 1000")
+BATTERY_NOMINAL_CAPACITY_WH = float(os.getenv("BATTERY_NOMINAL_CAPACITY_WH", "1002.0"))
+BATTERY_VOLTAGE_NOMINAL = float(os.getenv("BATTERY_VOLTAGE_NOMINAL", "230.0"))
+BATTERY_MAX_POWER_W = float(os.getenv("BATTERY_MAX_POWER_W", "1000.0"))
+BATTERY_INITIAL_SOC = float(os.getenv("BATTERY_INITIAL_SOC", "85.0"))
+BATTERY_SIMULATED_CHARGE_W = float(os.getenv("BATTERY_SIMULATED_CHARGE_W", "500.0"))
 
+# Local Mosquitto topic for battery status (consumed by h2s_agent)
+MQTT_TOPIC_BATTERY_STATUS = os.getenv("MQTT_TOPIC_BATTERY_STATUS", "h2s/site4/battery/status")
 
-# Shelly Devices
+# Shelly Devices & Priority Classification for Indirect Battery Control (Chemin B)
+# DISCHARGE -> priority appliances turned ON (draw from battery)
+# CHARGE    -> non-critical appliances turned OFF (simulates surplus absorption)
 SHELLY_DEVICES = {
-    2001: {"name": "TV Salle à manger", "ip": "192.168.1.10"},
-    2002: {"name": "Ecran", "ip": "192.168.1.197"},
-    2003: {"name": "Telephone / Tablette", "ip": "192.168.1.128"},
-    2004: {"name": "Cafetiere", "ip": "192.168.1.103"},
-    2005: {"name": "Lampe Salle à manger", "ip": "192.168.1.8"},
-    2006: {"name": "PC Portable", "ip": "192.168.1.176"},
-    2007: {"name": "Lampe Cuisine", "ip": "192.168.1.130"},
-    2008: {"name": "Lampe Chambre", "ip": "192.168.1.157"},
+    2001: {"name": "TV Salle à manger", "ip": "192.168.1.10", "priority": True},
+    2002: {"name": "Ecran", "ip": "192.168.1.197", "priority": True},
+    2003: {"name": "Telephone / Tablette", "ip": "192.168.1.128", "priority": True},
+    2004: {"name": "Cafetiere", "ip": "192.168.1.103", "priority": False},
+    2005: {"name": "Lampe Salle à manger", "ip": "192.168.1.8", "priority": False},
+    2006: {"name": "PC Portable", "ip": "192.168.1.176", "priority": True},
+    2007: {"name": "Lampe Cuisine", "ip": "192.168.1.130", "priority": False},
+    2008: {"name": "Lampe Chambre", "ip": "192.168.1.157", "priority": False},
 }
+
+SHELLY_PRIORITY_IDS = [dev_id for dev_id, info in SHELLY_DEVICES.items() if info.get("priority")]
+SHELLY_NON_CRITICAL_IDS = [dev_id for dev_id, info in SHELLY_DEVICES.items() if not info.get("priority")]
 
 WEATHER_CODES = {
     0: "Clear Sky",

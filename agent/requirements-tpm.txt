@@ -1,0 +1,3 @@
+# Magasin de clés TPM 2.0 (key_store "tpm2", WP8). Prérequis système : apt install libtss2-dev (tpm2-tss 3.x ou plus).
+# Installer : pip install -r requirements.txt -r requirements-tpm.txt
+tpm2-pytss==3.0.0
