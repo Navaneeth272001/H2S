@@ -125,7 +125,7 @@ async def main():
                             voltage_v=voltage,
                             power_w=power,
                             energy_minute_wh=energy_minute_wh,
-                            timestamp=now.replace(tzinfo=None)
+                            timestamp=now
                         )
                         # Publish H2S JSON gateway format for h2s_agent ingestion
                         publish_device_status_h2s(
@@ -134,7 +134,7 @@ async def main():
                             voltage_v=voltage,
                             power_w=power,
                             energy_wh=energy_minute_wh,
-                            timestamp=now.replace(tzinfo=None)
+                            timestamp=now
                         )
                         
                         # Accumulate in buffer
@@ -190,7 +190,7 @@ async def main():
                         voltage_v=b_reading.voltage_v,
                         current_a=b_reading.current_a,
                         temperature_c=b_reading.temperature_c,
-                        timestamp=now.replace(tzinfo=None)
+                        timestamp=now
                     )
 
                     # Publish battery status to local broker for h2s_agent
@@ -202,9 +202,9 @@ async def main():
                         voltage_v=b_reading.voltage_v,
                         current_a=b_reading.current_a,
                         temperature_c=b_reading.temperature_c,
-                        timestamp=now.replace(tzinfo=None)
+                        timestamp=now
                     )
-                            
+
                 await db_session.commit()
                 
             logger.info(f"Minute data saved for {len(results)} devices and battery.")
@@ -238,7 +238,7 @@ async def main():
                             precipitation=weather_data["precipitation"],
                             condition=weather_data["condition"],
                             ghi=weather_data["ghi"],
-                            timestamp=hour_start.replace(tzinfo=None)
+                            timestamp=hour_start
                         )
                     
                     # Save Hourly Energy
@@ -264,8 +264,8 @@ async def main():
                                 avg_voltage_v=round(b["v"] / b["c"], 1),
                                 avg_power_w=round(b["p"] / b["c"], 1),
                                 total_energy_wh=round(b["energy"], 2),
-                                start_time=hour_start.replace(tzinfo=None),
-                                end_time=hour_end.replace(tzinfo=None)
+                                start_time=hour_start,
+                                end_time=hour_end
                             )
                             
                     await db_session.commit()

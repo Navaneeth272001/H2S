@@ -548,7 +548,18 @@ class TestCollector:
         assert c.rejected == 1
         assert c.on_message("inconnu/topic", b"{}") == 0
         battery = [i for i in b.due(clock.now()) if i.payload.get("source") == "battery"]
-        assert len(battery) == 1 and battery[0].priority == 2 and battery[0].payload["values"]["soc_pct"] == 64.2
+        assert len(battery) == 1 and battery[0].priority == 2
+        # Contrat strict du backend agent-sync : pas de synonymes locaux
+        # (soc, charge_power_w, …), ni de métadonnées dans le payload.
+        assert battery[0].payload == {
+            "source": "battery",
+            "stock_id": 1,
+            "values": {
+                "soc_pct": 64.2,
+                "power_charge_w": 0.0,
+                "power_discharge_w": 120.0,
+            },
+        }
         assert c.aggregate(T0 + dt.timedelta(minutes=11)) == 1, (
             "grâce de 2 minutes : seule la première fenêtre est close"
         )

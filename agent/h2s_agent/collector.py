@@ -26,6 +26,19 @@ WINDOW = dt.timedelta(minutes=5)
 GRACE = dt.timedelta(minutes=2)
 COUNTER_LOOKBACK = dt.timedelta(hours=1)
 
+# Contrat de ``POST /api/agent/sync/buffer`` pour ``source: battery``.  Les
+# noms internes/anciens (``soc``, ``charge_power_w``…) sont normalisés par
+# ``parsers.h2s_battery`` avant d'arriver ici ; ne jamais les laisser sortir
+# dans le paquet signé envoyé au backend.
+BATTERY_VALUE_KEYS = (
+    "soc_pct",
+    "power_charge_w",
+    "power_discharge_w",
+    "voltage_v",
+    "current_a",
+    "temperature_c",
+)
+
 
 def floor(at: dt.datetime, step: dt.timedelta) -> dt.datetime:
     epoch = dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc)
@@ -128,15 +141,18 @@ class Collector:
                 written += cur.rowcount
         battery = [r for r in readings if r.source == "battery"]
         if battery and written:
-            values = {r.data_type: r.value for r in battery}
+            # Le backend batterie est volontairement strict : seulement ces
+            # six grandeurs sont admises dans ``values``.  Ne pas envoyer la
+            # qualité ou l'agrégation, qui sont des métadonnées locales et ne
+            # font pas partie de son DTO MeasurementPayload.
+            by_type = {r.data_type: r.value for r in battery}
+            values = {key: by_type[key] for key in BATTERY_VALUE_KEYS if key in by_type}
             self._buffer.push(
                 "MEASUREMENT",
                 {
                     "source": "battery",
                     "stock_id": battery[0].ref,
                     "values": values,
-                    "quality": battery[0].quality,
-                    "aggregation": "RAW",
                 },
                 battery[0].at,
                 received,

@@ -15,6 +15,8 @@ import json
 import logging
 import time
 import os
+from datetime import datetime, timezone
+
 import paho.mqtt.client as mqtt
 
 from .config import (
@@ -104,15 +106,28 @@ def _publish_raw(topic: str, payload_dict: dict):
     else:
         logger.error(f"Cannot publish to {topic}, MQTT client not connected")
 
-def _make_payload_dict(valeur, unite: str, capteur_id: str, timestamp=None) -> dict:
+def _iso_utc(timestamp=None) -> str:
+    """Instant ISO-8601 en UTC, suffixe « Z ».
+
+    ``main_collector`` passe ``datetime.now(tz).replace(tzinfo=None)`` : un datetime NAÏF, à l'heure
+    locale du boîtier. Le formater tel quel avec un « Z » annonce une mesure décalée du fuseau — cinq
+    heures et demie dans le futur pour un Pi en UTC+5:30. h2s_agent ramène alors l'horodatage à l'heure
+    de réception (marquée ESTIMATED) et le cloud refuse purement et simplement une mesure datée dans le
+    futur. Un datetime naïf est donc interprété dans le fuseau local puis converti en UTC.
+    """
     if timestamp is None:
-        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    elif hasattr(timestamp, "strftime"):
-        ts = timestamp.strftime("%Y-%m-%dT%H:%M:%SZ")
+        moment = datetime.now(timezone.utc)
+    elif isinstance(timestamp, datetime):
+        # datetime naïf : astimezone() suppose le fuseau local, puis convertit vers UTC.
+        moment = timestamp.astimezone(timezone.utc)
     else:
-        ts = str(timestamp)
-        if not ts.endswith("Z"):
-            ts += "Z"
+        text = str(timestamp)
+        return text if text.endswith("Z") else text + "Z"
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _make_payload_dict(valeur, unite: str, capteur_id: str, timestamp=None) -> dict:
+    ts = _iso_utc(timestamp)
 
     return {
         "timestamp": ts,
@@ -145,14 +160,7 @@ def publish_device_status_h2s(device_id: int, current_a: float, voltage_v: float
     """
     Publish device status in H2S JSON gateway format consumed by h2s_agent (parsers.h2s_device).
     """
-    if timestamp is None:
-        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    elif hasattr(timestamp, "strftime"):
-        ts = timestamp.strftime("%Y-%m-%dT%H:%M:%SZ")
-    else:
-        ts = str(timestamp)
-        if not ts.endswith("Z"):
-            ts += "Z"
+    ts = _iso_utc(timestamp)
 
     device_payload = {
         "timestamp": ts,
@@ -231,14 +239,7 @@ def publish_battery_status_h2s(stock_id: int, soc_pct: float,
     Publish full status payload to local Mosquitto topic (e.g. h2s/site4/battery/status)
     so h2s_agent's collector ingests it directly for local storage, signed buffer, and live telemetry.
     """
-    if timestamp is None:
-        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    elif hasattr(timestamp, "strftime"):
-        ts = timestamp.strftime("%Y-%m-%dT%H:%M:%SZ")
-    else:
-        ts = str(timestamp)
-        if not ts.endswith("Z"):
-            ts += "Z"
+    ts = _iso_utc(timestamp)
 
     battery_payload = {
         "timestamp": ts,
@@ -267,7 +268,7 @@ def publish_decision_report(action: str, details: dict, timestamp=None):
     logger.info(f"Decision report for {action} published to {MQTT_TOPIC_COMPTES_RENDUS}")
 
 def publish_etat(extra: dict = None):
-    ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    ts = _iso_utc()
     etat_payload = {
         "timestamp": ts,
         "valeur": 1,
