@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -66,22 +67,66 @@ JACKERY_DEVICE_SN = os.getenv("JACKERY_DEVICE_SN", "")
 # Local Mosquitto topic for battery status (consumed by h2s_agent)
 MQTT_TOPIC_BATTERY_STATUS = os.getenv("MQTT_TOPIC_BATTERY_STATUS", "h2s/site4/battery/status")
 
-# Shelly Devices & Priority Classification for Indirect Battery Control (Chemin B)
-# DISCHARGE -> priority appliances turned ON (draw from battery)
-# CHARGE    -> non-critical appliances turned OFF (simulates surplus absorption)
-SHELLY_DEVICES = {
-    8: {"name": "LIVING ROOM LAMP", "ip": "192.168.1.8", "priority": False},
-    9: {"name": "LIVING ROOM - TV", "ip": "192.168.1.10", "priority": True},
-    10: {"name": "KITCHEN - COFFEE MACHINE", "ip": "192.168.1.103", "priority": False},
-    11: {"name": "KITCHEN - LAMP", "ip": "192.168.1.130", "priority": False},
-    12: {"name": "BED ROOM - LAMP", "ip": "192.168.1.157", "priority": False},
-    13: {"name": "BED ROOM - PC SCREEN", "ip": "192.168.1.197", "priority": True},
-    14: {"name": "BED ROOM - COMPUTER", "ip": "192.168.1.176", "priority": True},
-    15: {"name": "BED ROOM - MOBILE PHONE/TABLET CHARGER", "ip": "192.168.1.128", "priority": True},
+# Shelly configuration is overridable as JSON so channel/role assumptions stay
+# in deployment config. The built-in map preserves the existing installation.
+_legacy_shelly_devices = {
+    8: {"name": "LIVING ROOM LAMP", "ip": "192.168.1.8", "role": "non_critical"},
+    9: {"name": "LIVING ROOM - TV", "ip": "192.168.1.10", "role": "priority"},
+    10: {"name": "KITCHEN - COFFEE MACHINE", "ip": "192.168.1.103", "role": "non_critical"},
+    11: {"name": "KITCHEN - LAMP", "ip": "192.168.1.130", "role": "non_critical"},
+    12: {"name": "BED ROOM - LAMP", "ip": "192.168.1.157", "role": "non_critical"},
+    13: {"name": "BED ROOM - PC SCREEN", "ip": "192.168.1.197", "role": "priority"},
+    14: {"name": "BED ROOM - COMPUTER", "ip": "192.168.1.176", "role": "priority"},
+    15: {"name": "BED ROOM - MOBILE PHONE/TABLET CHARGER", "ip": "192.168.1.128", "role": "priority"},
 }
 
-SHELLY_PRIORITY_IDS = [dev_id for dev_id, info in SHELLY_DEVICES.items() if info.get("priority")]
-SHELLY_NON_CRITICAL_IDS = [dev_id for dev_id, info in SHELLY_DEVICES.items() if not info.get("priority")]
+
+def _load_shelly_devices() -> dict[int, dict]:
+    raw = os.getenv("SHELLY_DEVICES_JSON", "").strip()
+    devices = json.loads(raw) if raw else _legacy_shelly_devices
+    if not isinstance(devices, dict):
+        raise ValueError("SHELLY_DEVICES_JSON must be a JSON object keyed by H2S device ID")
+
+    normalized = {}
+    for key, value in devices.items():
+        device_id = int(key)
+        if not isinstance(value, dict) or not value.get("ip"):
+            raise ValueError(f"Shelly device {key!r} must be an object with an ip")
+        item = dict(value)
+        # Keep the prior `priority` boolean accepted for existing local configs.
+        role = item.get("role")
+        if role is None:
+            role = "priority" if item.get("priority") else "non_critical"
+        if role not in ("priority", "non_critical", "monitor_only"):
+            raise ValueError(f"Shelly device {key!r} has unsupported role {role!r}")
+        protocol = str(item.get("protocol", "gen2_rpc"))
+        if protocol != "gen2_rpc":
+            raise ValueError(f"Shelly device {key!r} has unsupported protocol {protocol!r}; configured adapter supports gen2_rpc")
+        switch_id = int(item.get("switch_id", 0))
+        if switch_id < 0:
+            raise ValueError(f"Shelly device {key!r} switch_id cannot be negative")
+        item.update({
+            "name": str(item.get("name", f"Shelly {device_id}")),
+            "ip": str(item["ip"]),
+            "role": role,
+            "switch_id": switch_id,
+            "measurement_component": str(item.get("measurement_component", f"switch:{switch_id}")),
+            "protocol": protocol,
+        })
+        normalized[device_id] = item
+    return normalized
+
+
+SHELLY_DEVICES = _load_shelly_devices()
+SHELLY_PRIORITY_IDS = [i for i, d in SHELLY_DEVICES.items() if d["role"] == "priority"]
+SHELLY_NON_CRITICAL_IDS = [i for i, d in SHELLY_DEVICES.items() if d["role"] == "non_critical"]
+SHELLY_EXECUTION_MODE = os.getenv("SHELLY_EXECUTION_MODE", "simulation").strip().lower()
+if SHELLY_EXECUTION_MODE not in ("simulation", "dry_run", "hardware"):
+    raise ValueError("SHELLY_EXECUTION_MODE must be simulation, dry_run, or hardware")
+SHELLY_PHYSICAL_COMMANDS_ENABLED = os.getenv("SHELLY_PHYSICAL_COMMANDS_ENABLED", "false").lower() in ("true", "1", "yes")
+SHELLY_COMMAND_TIMEOUT_SECONDS = float(os.getenv("SHELLY_COMMAND_TIMEOUT_SECONDS", "5"))
+SHELLY_MAX_RETRIES = max(0, int(os.getenv("SHELLY_MAX_RETRIES", "2")))
+SHELLY_EFFECT_THRESHOLD_W = max(0.0, float(os.getenv("SHELLY_EFFECT_THRESHOLD_W", "5")))
 
 WEATHER_CODES = {
     0: "Clear Sky",

@@ -3,29 +3,18 @@ import logging
 from datetime import datetime
 from .config import LAT, LON, TIMEZONE, WEATHER_CODES
 from zoneinfo import ZoneInfo
+from .shelly_rpc import ShellyRPCClient, ShellyRPCError
 
 logger = logging.getLogger(__name__)
+_shelly_rpc = ShellyRPCClient()
 
-async def fetch_shelly(session: aiohttp.ClientSession, device_id: int, device_info: dict):
-    url = f"http://{device_info['ip']}/rpc/Switch.GetStatus?id=0"
+async def fetch_shelly(session: aiohttp.ClientSession, device_id: int, device_info: dict,
+                       rpc_client: ShellyRPCClient | None = None):
+    """Read actual relay and configured component telemetry; absent fields stay unavailable."""
     try:
-        async with session.get(url, timeout=5) as response:
-            response.raise_for_status()
-            data = await response.json()
-            
-            # current, voltage, power
-            current = float(data.get("current", 0.0))
-            voltage = float(data.get("voltage", 0.0))
-            power = float(data.get("apower", 0.0))
-            
-            return {
-                "device_id": device_id,
-                "device_name": device_info["name"],
-                "current_a": current,
-                "voltage_v": voltage,
-                "power_w": power,
-                "success": True
-            }
+        reading = await (rpc_client or _shelly_rpc).read_device(session, device_id, device_info)
+        reading["success"] = True  # device reachable; measurement quality is represented separately
+        return reading
     except Exception as e:
         logger.error(f"Failed to fetch Shelly data for {device_info['name']} (IP: {device_info['ip']}): {e}")
         return {
@@ -34,6 +23,9 @@ async def fetch_shelly(session: aiohttp.ClientSession, device_id: int, device_in
             "current_a": None,
             "voltage_v": None,
             "power_w": None,
+            "energy_total_wh": None,
+            "relay_state": None,
+            "measurement_quality": "UNAVAILABLE",
             "success": False
         }
 

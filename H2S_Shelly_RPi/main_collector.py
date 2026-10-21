@@ -2,13 +2,18 @@ import asyncio
 import aiohttp
 import logging
 import signal
-from datetime import datetime, timedelta
+import json
+import threading
+import uuid
+from collections import deque
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from sqlalchemy import select
 from src.config import (
     SHELLY_DEVICES, POLL_INTERVAL, MINUTES_PER_HOUR, TIMEZONE, MAX_ERRORS, HEARTBEAT_INTERVAL,
     BATTERY_ENABLED, BATTERY_STOCK_ID, BATTERY_NAME, SHELLY_PRIORITY_IDS
 )
-from src.database import init_db, AsyncSessionLocal, EnergyMinute, EnergyHourly, WeatherHourly, BatteryMinute
+from src.database import init_db, AsyncSessionLocal, EnergyMinute, EnergyHourly, WeatherHourly, BatteryMinute, ShellyCommand
 from src.collector import fetch_shelly, fetch_weather
 from src.battery import get_battery_manager
 from src.shelly_control import execute_battery_decision
@@ -26,20 +31,81 @@ logger = logging.getLogger("main_collector")
 
 _main_loop = None
 _http_session = None
+_seen_order_ids = set()
+_seen_order_ids_order = deque(maxlen=10000)
+_seen_order_lock = threading.Lock()
+_command_lock = asyncio.Lock()
+
+
+def _as_datetime(value):
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _persist_shelly_report(action: str, report: dict):
+    commands = report.get("commands") or []
+    errors = report.get("errors") or []
+    async with AsyncSessionLocal() as db_session:
+        db_session.add(ShellyCommand(
+            correlation_id=report.get("correlation_id"), action=action,
+            execution_mode=report.get("execution_mode", "unknown"),
+            status=report.get("status", "UNKNOWN"),
+            error=("; ".join(str(item.get("error", "")) for item in errors) or None),
+            result_json=json.dumps(report, separators=(",", ":"), default=str),
+            issued_at=_as_datetime(report.get("issued_at")),
+        ))
+        for item in commands:
+            db_session.add(ShellyCommand(
+                correlation_id=report.get("correlation_id"), action=action,
+                execution_mode=report.get("execution_mode", "unknown"),
+                status=report.get("status", "UNKNOWN"), device_id=item.get("device_id"),
+                device_name=item.get("name"), switch_id=item.get("switch_id"),
+                target_state=item.get("target_state"), command_sent=item.get("command_sent"),
+                command_acknowledged=item.get("command_acknowledged"),
+                state_before=item.get("state_before"), state_after=item.get("state_after"),
+                verified=item.get("verified"), measurement_before_w=item.get("measurement_before_w"),
+                measurement_after_w=item.get("measurement_after_w"),
+                measurement_quality=item.get("measurement_quality"), latency_ms=item.get("latency_ms"),
+                issued_at=_as_datetime(report.get("issued_at")),
+                observed_at=_as_datetime(item.get("observed_timestamp")),
+            ))
+        for item in errors:
+            db_session.add(ShellyCommand(
+                correlation_id=report.get("correlation_id"), action=action,
+                execution_mode=report.get("execution_mode", "unknown"),
+                status=report.get("status", "FAILED"), device_id=item.get("device_id"),
+                device_name=item.get("name"), target_state=item.get("target_state"),
+                error=str(item.get("error", "command failed"))[:1000],
+                issued_at=_as_datetime(report.get("issued_at")),
+            ))
+        if commands or errors:
+            await db_session.commit()
 
 def _handle_ordre(data: dict):
     """Callback for incoming cloud/agent orders on the ordres topic (or local decision)."""
-    logger.info(f"Received ordre payload: {data}")
+    logger.info("Received battery order")
     # Extract action: directly or from inner payload
     action = None
+    correlation_id = None
+    expires_at = None
     if isinstance(data, dict):
+        correlation_id = data.get("command_id") or data.get("correlation_id") or data.get("decision_id")
+        expires_at = data.get("expires_at")
         if "action" in data:
             action = str(data["action"])
-        elif "payload" in data and isinstance(data["payload"], str):
+        elif "payload" in data:
             try:
-                import json
-                inner = json.loads(data["payload"])
+                inner = json.loads(data["payload"]) if isinstance(data["payload"], str) else data["payload"]
+                if not isinstance(inner, dict):
+                    raise ValueError("order payload must be an object")
                 action = inner.get("action")
+                correlation_id = correlation_id or inner.get("command_id") or inner.get("decision_id")
+                expires_at = expires_at or inner.get("expires_at")
             except Exception:
                 pass
         elif "command" in data:
@@ -47,16 +113,50 @@ def _handle_ordre(data: dict):
 
     if action and _main_loop and _http_session:
         action_clean = action.upper().strip()
+        if correlation_id:
+            with _seen_order_lock:
+                if correlation_id in _seen_order_ids:
+                    publish_decision_report(action_clean, {"status": "DUPLICATE_IGNORED", "correlation_id": correlation_id})
+                    logger.warning("Ignoring duplicate battery order %s", correlation_id)
+                    return
+                if len(_seen_order_ids_order) == _seen_order_ids_order.maxlen:
+                    _seen_order_ids.discard(_seen_order_ids_order[0])
+                _seen_order_ids_order.append(correlation_id)
+                _seen_order_ids.add(correlation_id)
+        expiry = _as_datetime(expires_at)
+        if expires_at and (expiry is None or expiry <= datetime.now(timezone.utc)):
+            report = {"status": "REJECTED_EXPIRED", "correlation_id": correlation_id,
+                      "action": action_clean, "strategy": "shelly_indirect"}
+            publish_decision_report(action_clean, report)
+            logger.warning("Rejecting expired or invalid battery order %s", correlation_id)
+            return
         logger.info(f"Dispatching decision action to Shelly relays (Chemin B): {action_clean}")
-        coro = _execute_and_report_decision(action_clean)
+        coro = _execute_and_report_decision(action_clean, str(correlation_id) if correlation_id else str(uuid.uuid4()))
         asyncio.run_coroutine_threadsafe(coro, _main_loop)
 
-async def _execute_and_report_decision(action: str):
+async def _execute_and_report_decision(action: str, correlation_id: str | None = None):
     try:
-        battery_mgr = get_battery_manager()
-        battery_mgr.set_action(action)
-        report = await execute_battery_decision(_http_session, action, SHELLY_DEVICES)
-        publish_decision_report(action, report)
+        async with _command_lock:
+            if correlation_id:
+                async with AsyncSessionLocal() as db_session:
+                    prior = await db_session.scalar(
+                        select(ShellyCommand.id).where(
+                            ShellyCommand.correlation_id == correlation_id,
+                            ShellyCommand.device_id.is_(None),
+                        ).limit(1)
+                    )
+                if prior is not None:
+                    duplicate = {"status": "DUPLICATE_IGNORED", "correlation_id": correlation_id,
+                                 "action": action, "strategy": "shelly_indirect"}
+                    publish_decision_report(action, duplicate)
+                    return
+            battery_mgr = get_battery_manager()
+            battery_mgr.set_action(action)
+            report = await execute_battery_decision(
+                _http_session, action, SHELLY_DEVICES, correlation_id=correlation_id
+            )
+            await _persist_shelly_report(action, report)
+            publish_decision_report(action, report)
     except Exception as e:
         logger.error(f"Error executing battery decision {action}: {e}")
 
@@ -73,7 +173,7 @@ async def main():
     email_sent = {dev_id: False for dev_id in SHELLY_DEVICES}
     
     # buffers for hourly aggregation
-    buffers = {dev_id: {"energy": 0.0, "p": 0.0, "i": 0.0, "v": 0.0, "c": 0} for dev_id in SHELLY_DEVICES}
+    buffers = {dev_id: {"energy": 0.0, "p": 0.0, "i": 0.0, "v": 0.0, "c": 0, "ic": 0, "vc": 0} for dev_id in SHELLY_DEVICES}
     minute_count = 0
     heartbeat_elapsed = 0     # seconds since last etat publish
     
@@ -103,9 +203,9 @@ async def main():
                         power = res["power_w"]
                         current = res["current_a"]
                         voltage = res["voltage_v"]
-                        energy_minute_wh = round(power / 60, 3)
+                        energy_minute_wh = round(power * POLL_INTERVAL / 3600.0, 3) if power is not None else None
 
-                        # Insert into minute table
+                        # Persist measurements actually supplied by the configured Shelly component.
                         em = EnergyMinute(
                             timestamp=now.replace(tzinfo=None),
                             device_id=dev_id,
@@ -113,36 +213,49 @@ async def main():
                             current_a=current,
                             voltage_v=voltage,
                             power_w=power,
-                            energy_minute_wh=energy_minute_wh
+                            energy_minute_wh=energy_minute_wh,
+                            relay_state=res.get("relay_state"),
+                            measurement_quality=res.get("measurement_quality", "UNAVAILABLE"),
+                            measurement_timestamp=_as_datetime(res.get("measurement_timestamp")),
+                            energy_total_wh=res.get("energy_total_wh"),
+                            shelly_model=(res.get("identity") or {}).get("model"),
+                            shelly_firmware=(res.get("identity") or {}).get("fw_id")
                         )
                         db_session.add(em)
 
-                        # Publish to MQTT (cloud server)
-                        publish_energy_minute(
-                            device_id=dev_id,
-                            device_name=res["device_name"],
-                            current_a=current,
-                            voltage_v=voltage,
-                            power_w=power,
-                            energy_minute_wh=energy_minute_wh,
-                            timestamp=now
-                        )
-                        # Publish H2S JSON gateway format for h2s_agent ingestion
-                        publish_device_status_h2s(
-                            device_id=dev_id,
-                            current_a=current,
-                            voltage_v=voltage,
-                            power_w=power,
-                            energy_wh=energy_minute_wh,
-                            timestamp=now
-                        )
-                        
-                        # Accumulate in buffer
-                        buffers[dev_id]["energy"] += energy_minute_wh
-                        buffers[dev_id]["p"] += power
-                        buffers[dev_id]["i"] += current
-                        buffers[dev_id]["v"] += voltage
-                        buffers[dev_id]["c"] += 1
+                        if any(value is not None for value in (power, current, voltage)):
+                            publish_energy_minute(
+                                device_id=dev_id,
+                                device_name=res["device_name"],
+                                current_a=current,
+                                voltage_v=voltage,
+                                power_w=power,
+                                energy_minute_wh=energy_minute_wh,
+                                timestamp=now
+                            )
+                            publish_device_status_h2s(
+                                device_id=dev_id,
+                                current_a=current,
+                                voltage_v=voltage,
+                                power_w=power,
+                                energy_wh=energy_minute_wh,
+                                timestamp=now
+                            )
+
+                        # Integrate energy only from measured active power.
+                        if power is not None:
+                            buffers[dev_id]["energy"] += energy_minute_wh
+                            buffers[dev_id]["p"] += power
+                            buffers[dev_id]["c"] += 1
+                            if current is not None:
+                                buffers[dev_id]["i"] += current
+                                buffers[dev_id]["ic"] += 1
+                            if voltage is not None:
+                                buffers[dev_id]["v"] += voltage
+                                buffers[dev_id]["vc"] += 1
+                        elif res["measurement_quality"] == "UNAVAILABLE":
+                            logger.warning("Shelly %s online but configured measurement %s is unavailable",
+                                           dev_id, res["measurement_component"])
                         
                     else:
                         error_counts[dev_id] += 1
@@ -252,8 +365,8 @@ async def main():
                                 end_time=hour_end.replace(tzinfo=None),
                                 device_id=dev_id,
                                 device_name=SHELLY_DEVICES[dev_id]["name"],
-                                avg_current_a=round(b["i"] / b["c"], 3),
-                                avg_voltage_v=round(b["v"] / b["c"], 1),
+                                avg_current_a=round(b["i"] / b["ic"], 3) if b["ic"] else None,
+                                avg_voltage_v=round(b["v"] / b["vc"], 1) if b["vc"] else None,
                                 avg_power_w=round(b["p"] / b["c"], 1),
                                 total_energy_wh=round(b["energy"], 2)
                             )
@@ -263,8 +376,8 @@ async def main():
                             publish_energy_hourly(
                                 device_id=dev_id,
                                 device_name=SHELLY_DEVICES[dev_id]["name"],
-                                avg_current_a=round(b["i"] / b["c"], 3),
-                                avg_voltage_v=round(b["v"] / b["c"], 1),
+                                avg_current_a=round(b["i"] / b["ic"], 3) if b["ic"] else None,
+                                avg_voltage_v=round(b["v"] / b["vc"], 1) if b["vc"] else None,
                                 avg_power_w=round(b["p"] / b["c"], 1),
                                 total_energy_wh=round(b["energy"], 2),
                                 start_time=hour_start,
@@ -275,7 +388,7 @@ async def main():
                     logger.info("Hourly data committed.")
                 
                 # Reset
-                buffers = {d: {"energy": 0.0, "p": 0.0, "i": 0.0, "v": 0.0, "c": 0} for d in SHELLY_DEVICES}
+                buffers = {d: {"energy": 0.0, "p": 0.0, "i": 0.0, "v": 0.0, "c": 0, "ic": 0, "vc": 0} for d in SHELLY_DEVICES}
                 minute_count = 0
                 hour_start = hour_end
 

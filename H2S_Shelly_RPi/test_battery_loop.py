@@ -10,7 +10,7 @@ Tests the full cyber-physical loop:
    - DISCHARGE -> Priority devices ON -> Power drawn from battery -> SoC decreases
    - CHARGE    -> Non-critical devices OFF -> Load drops -> Simulated surplus charges battery -> SoC increases
    - STANDBY   -> Stable state
-6. Jackery Direct API driver feasibility (Chemin A)
+6. Jackery Socketry reader configuration (Chemin A, read only)
 """
 
 import asyncio
@@ -134,34 +134,22 @@ def test_h2s_agent_parser_compatibility():
 
 
 def test_decision_translation_logic():
-    """Verify decision mapping into priority ON (DISCHARGE) and non-critical OFF (CHARGE)."""
+    """Verify configured roles map to plans while default mode cannot actuate."""
     class MockClientSession:
-        class MockResponse:
-            status = 200
-            async def json(self):
-                return {"was_on": False}
-            async def __aenter__(self):
-                return self
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                pass
-
-        def post(self, url, json=None, timeout=None):
-            return self.MockResponse()
+        pass
 
     async def run_async_test():
         # Test DISCHARGE: should turn ON priority devices
         res_discharge = await execute_battery_decision(MockClientSession(), "DISCHARGE")
         assert res_discharge["action"] == "DISCHARGE"
-        # 4 priority devices (TV 2001, Screen 2002, Tablet 2003, PC 2006)
-        expected_priority = {2001, 2002, 2003, 2006}
-        assert set(SHELLY_PRIORITY_IDS) == expected_priority
+        assert res_discharge["status"] == "SIMULATED"
+        assert {item["device_id"] for item in res_discharge["commands"]} == set(SHELLY_PRIORITY_IDS)
 
         # Test CHARGE: should turn OFF non-critical devices
         res_charge = await execute_battery_decision(MockClientSession(), "CHARGE")
         assert res_charge["action"] == "CHARGE"
-        # 4 non-critical devices (Coffee 2004, Lamp 2005, Lamp 2007, Lamp 2008)
-        expected_non_critical = {2004, 2005, 2007, 2008}
-        assert set(SHELLY_NON_CRITICAL_IDS) == expected_non_critical
+        assert res_charge["status"] == "SIMULATED"
+        assert {item["device_id"] for item in res_charge["commands"]} == set(SHELLY_NON_CRITICAL_IDS)
 
         # Test STANDBY: should maintain states
         res_standby = await execute_battery_decision(MockClientSession(), "STANDBY")
@@ -172,20 +160,16 @@ def test_decision_translation_logic():
 
 
 def test_jackery_api_client():
-    """Verify Chemin A Jackery client interface and fallback."""
+    """Socketry mode requires real credentials and a selected device serial."""
     client = JackeryClient(email="", password="")
-    # Without credentials, gracefully returns False and None
-    assert client.login() is False
-    assert client.read_battery() is None
-
-    # Mock credentials validation
-    client = JackeryClient(email="test@h2s.example", password="dummy_password")
-    assert client.login() is True
-    status = client.read_battery()
-    assert status is not None
-    assert "soc_pct" in status
-    assert client.set_ac(True) is True
-    assert client.set_eco_mode(True) is True
+    async def expect_missing_credentials():
+        try:
+            await client.read_battery()
+        except RuntimeError as exc:
+            assert "JACKERY_EMAIL" in str(exc)
+        else:
+            raise AssertionError("Socketry must not fabricate telemetry without configured credentials")
+    asyncio.run(expect_missing_credentials())
 
 
 if __name__ == "__main__":

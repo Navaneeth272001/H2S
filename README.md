@@ -65,6 +65,8 @@ The per-agent namespace enforced by broker ACL (`<uuid>` = `AGENT_UUID`):
 
 **Jackery live telemetry:** The collector can opt in to polling Jackery through the third-party `socketry` package. This uses Jackery's unofficial cloud API, requires internet access and supported device firmware/model, and is read-only in this integration. Set `BATTERY_SOURCE=socketry`, `JACKERY_EMAIL`, `JACKERY_PASSWORD`, and `JACKERY_DEVICE_SN` in the collector `.env`. When enabled, a failed physical read is skipped rather than replaced by simulated telemetry. The `socketry` project currently lists Explorer 3000 Pro, 2000 Plus, 300 Plus, 1000 Plus, 700 Plus, 280 Plus, 1000 Pro2, 600 Plus, 240, and 2000; verify your exact model before enabling it.
 
+**Shelly indirect control:** The collector polls Shelly Gen2/3 local JSON-RPC (`Shelly.GetDeviceInfo`, `Shelly.GetStatus`) and can switch configured channels with read-back verification. Control defaults to `SHELLY_EXECUTION_MODE=simulation`; physical switching requires both `SHELLY_EXECUTION_MODE=hardware` and `SHELLY_PHYSICAL_COMMANDS_ENABLED=true`. Set actual IPs, roles, switch channels, and measurement components in `SHELLY_DEVICES_JSON`. `CHARGE` only switches configured non-critical loads off to simulate a charging scenario; it does not charge the battery. Relay state, reported model/firmware, measurement quality, command result, and observed power feedback are kept distinct. See [Shelly commissioning notes](H2S_Shelly_RPi/SHELLY_CONTROL_AUDIT.md).
+
 ### 6. Federated Learning Gradients
 *   **Model**: LightGBM Regressor
 *   **Format**: Histogram gradients and tree parameters serialized as NumPy arrays (transported via Flower framework).

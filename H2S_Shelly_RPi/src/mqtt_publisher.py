@@ -151,6 +151,8 @@ def publish_energy_minute(device_id, device_name, current_a, voltage_v,
     ]
 
     for valeur, unite, capteur_id in readings:
+        if valeur is None:
+            continue
         payload = _make_payload_dict(valeur, unite, capteur_id, timestamp)
         _publish_raw(MQTT_TOPIC_TELEMETRIE, payload)
 
@@ -165,11 +167,18 @@ def publish_device_status_h2s(device_id: int, current_a: float, voltage_v: float
     device_payload = {
         "timestamp": ts,
         "device_id": device_id,
-        "power_w": round(float(power_w), 2),
-        "current_a": round(float(current_a), 3),
-        "voltage_v": round(float(voltage_v), 1),
-        "energy_wh": round(float(energy_wh), 3),
     }
+    if power_w is not None:
+        device_payload["power_w"] = round(float(power_w), 2)
+    if current_a is not None:
+        device_payload["current_a"] = round(float(current_a), 3)
+    if voltage_v is not None:
+        device_payload["voltage_v"] = round(float(voltage_v), 1)
+    if energy_wh is not None:
+        device_payload["energy_wh"] = round(float(energy_wh), 3)
+    if len(device_payload) == 2:
+        logger.warning("Skipping empty Shelly status for device %s", device_id)
+        return
     topic = f"h2s/devices/{device_id}/status"
     _publish_raw(topic, device_payload)
     logger.debug(f"Device status published to {topic}")
@@ -203,6 +212,8 @@ def publish_energy_hourly(device_id, device_name, avg_current_a, avg_voltage_v,
     ]
 
     for valeur, unite, capteur_id in readings:
+        if valeur is None:
+            continue
         payload = _make_payload_dict(valeur, unite, capteur_id, start_time)
         _publish_raw(MQTT_TOPIC_COMPTES_RENDUS, payload)
 

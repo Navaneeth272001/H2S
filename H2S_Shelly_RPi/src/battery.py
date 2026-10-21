@@ -142,21 +142,23 @@ class BatteryManager:
         p_discharge = 0.0
 
         if self.current_action == "DISCHARGE":
-            # Devices powered by the battery draw real load
-            p_discharge = max(0.0, min(float(active_load_w), self.max_power_w))
+            if BATTERY_SOURCE == "simulation":
+                # Only the explicitly simulated source models battery dynamics.
+                p_discharge = max(0.0, min(float(active_load_w), self.max_power_w))
+                d_energy_wh = p_discharge * (dt_seconds / 3600.0)
+                d_soc = (d_energy_wh / self.capacity_wh) * 100.0
+                self.soc_pct = max(10.0, self.soc_pct - d_soc)  # 10% safety cutoff
             p_charge = 0.0
-            # Energy delta in Wh
-            d_energy_wh = p_discharge * (dt_seconds / 3600.0)
-            d_soc = (d_energy_wh / self.capacity_wh) * 100.0
-            self.soc_pct = max(10.0, self.soc_pct - d_soc)  # 10% safety cutoff
 
         elif self.current_action == "CHARGE":
-            # Non-critical devices switched off; simulated surplus absorbs power
-            p_charge = self.charge_power_w
+            # Shelly only reports/changes appliance load; it cannot establish
+            # physical battery charging. Simulated source retains its model.
+            if BATTERY_SOURCE == "simulation":
+                p_charge = self.charge_power_w
+                d_energy_wh = p_charge * (dt_seconds / 3600.0)
+                d_soc = (d_energy_wh / self.capacity_wh) * 100.0
+                self.soc_pct = min(100.0, self.soc_pct + d_soc)
             p_discharge = 0.0
-            d_energy_wh = p_charge * (dt_seconds / 3600.0)
-            d_soc = (d_energy_wh / self.capacity_wh) * 100.0
-            self.soc_pct = min(100.0, self.soc_pct + d_soc)
 
         else:  # STANDBY
             p_charge = 0.0

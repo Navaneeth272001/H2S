@@ -18,6 +18,38 @@ class EnergyMinute(Base):
     voltage_v = Column(Float, nullable=True)
     power_w = Column(Float, nullable=True)
     energy_minute_wh = Column(Float, nullable=True)
+    relay_state = Column(Boolean, nullable=True)
+    measurement_quality = Column(String, default="UNAVAILABLE")
+    measurement_timestamp = Column(DateTime(timezone=True), nullable=True)
+    energy_total_wh = Column(Float, nullable=True)
+    shelly_model = Column(String, nullable=True)
+    shelly_firmware = Column(String, nullable=True)
+
+
+class ShellyCommand(Base):
+    __tablename__ = "shelly_command"
+    id = Column(Integer, primary_key=True, index=True)
+    correlation_id = Column(String, index=True, nullable=True)
+    action = Column(String, nullable=False)
+    execution_mode = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    device_id = Column(Integer, nullable=True, index=True)
+    device_name = Column(String, nullable=True)
+    switch_id = Column(Integer, nullable=True)
+    target_state = Column(Boolean, nullable=True)
+    command_sent = Column(Boolean, nullable=True)
+    command_acknowledged = Column(Boolean, nullable=True)
+    state_before = Column(Boolean, nullable=True)
+    state_after = Column(Boolean, nullable=True)
+    verified = Column(Boolean, nullable=True)
+    measurement_before_w = Column(Float, nullable=True)
+    measurement_after_w = Column(Float, nullable=True)
+    measurement_quality = Column(String, nullable=True)
+    latency_ms = Column(Float, nullable=True)
+    error = Column(String, nullable=True)
+    result_json = Column(String, nullable=True)
+    issued_at = Column(DateTime(timezone=True), nullable=True)
+    observed_at = Column(DateTime(timezone=True), nullable=True)
 
 class BatteryMinute(Base):
     __tablename__ = "battery_minute"
@@ -60,3 +92,11 @@ class WeatherHourly(Base):
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Upgrade existing collector databases without dropping user data.
+        await conn.exec_driver_sql("ALTER TABLE energy_minute ADD COLUMN IF NOT EXISTS relay_state BOOLEAN")
+        await conn.exec_driver_sql("ALTER TABLE energy_minute ADD COLUMN IF NOT EXISTS measurement_quality VARCHAR DEFAULT 'UNAVAILABLE'")
+        await conn.exec_driver_sql("ALTER TABLE energy_minute ADD COLUMN IF NOT EXISTS measurement_timestamp TIMESTAMPTZ")
+        await conn.exec_driver_sql("ALTER TABLE energy_minute ADD COLUMN IF NOT EXISTS energy_total_wh FLOAT")
+        await conn.exec_driver_sql("ALTER TABLE energy_minute ADD COLUMN IF NOT EXISTS shelly_model VARCHAR")
+        await conn.exec_driver_sql("ALTER TABLE energy_minute ADD COLUMN IF NOT EXISTS shelly_firmware VARCHAR")
+        await conn.exec_driver_sql("ALTER TABLE shelly_command ADD COLUMN IF NOT EXISTS result_json VARCHAR")
