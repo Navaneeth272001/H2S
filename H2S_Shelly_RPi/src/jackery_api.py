@@ -6,6 +6,7 @@ unofficial API and supports only the models listed in its own documentation.
 """
 
 import logging
+import re
 from typing import Any
 
 from .config import JACKERY_DEVICE_SN, JACKERY_EMAIL, JACKERY_PASSWORD
@@ -13,14 +14,20 @@ from .config import JACKERY_DEVICE_SN, JACKERY_EMAIL, JACKERY_PASSWORD
 logger = logging.getLogger("jackery_api")
 
 
-def _number(value: Any, property_name: str) -> float:
-    """Convert a socketry raw property value into a finite numeric reading."""
+def _number(value: Any, property_name: str, setting: Any = None) -> float:
+    """Convert a socketry property into the user-facing value and unit."""
     if isinstance(value, bool) or value is None:
         raise ValueError(f"Jackery property {property_name!r} is unavailable")
+    # Socketry returns protocol raw values from get_property(). Its formatter
+    # applies property-specific scaling (for example tenths of a degree).
+    formatted = setting.format_value(value) if setting is not None else value
     try:
-        result = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Jackery property {property_name!r} is not numeric: {value!r}") from exc
+        result = float(formatted)
+    except (TypeError, ValueError):
+        match = re.search(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)", str(formatted))
+        if match is None:
+            raise ValueError(f"Jackery property {property_name!r} is not numeric: {formatted!r}")
+        result = float(match.group(0))
     if not (-1e9 < result < 1e9):
         raise ValueError(f"Jackery property {property_name!r} is outside a valid range")
     return result
@@ -71,10 +78,10 @@ class JackeryClient:
         properties = {}
         for name in ("battery", "input-power", "output-power", "ac-voltage", "battery-temp"):
             try:
-                _setting, value = await self._device.get_property(name)
+                setting, value = await self._device.get_property(name)
             except (KeyError, ValueError) as exc:
                 raise RuntimeError(f"Jackery did not provide required property {name!r}: {exc}") from exc
-            properties[name] = _number(value, name)
+            properties[name] = _number(value, name, setting)
 
         soc = properties["battery"]
         voltage = properties["ac-voltage"]
