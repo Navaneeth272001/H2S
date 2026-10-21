@@ -55,6 +55,7 @@ BATTERY_NOMINAL_CAPACITY_WH = float(os.getenv("BATTERY_NOMINAL_CAPACITY_WH", "10
 BATTERY_VOLTAGE_NOMINAL = float(os.getenv("BATTERY_VOLTAGE_NOMINAL", "230.0"))
 BATTERY_MAX_POWER_W = float(os.getenv("BATTERY_MAX_POWER_W", "1000.0"))
 BATTERY_INITIAL_SOC = float(os.getenv("BATTERY_INITIAL_SOC", "85.0"))
+# Peak virtual renewable generation at 1,000 W/m² irradiance; no panels are assumed installed.
 BATTERY_SIMULATED_CHARGE_W = float(os.getenv("BATTERY_SIMULATED_CHARGE_W", "500.0"))
 
 # Optional Jackery telemetry through the third-party ``socketry`` client.

@@ -11,11 +11,12 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from src.config import (
     SHELLY_DEVICES, POLL_INTERVAL, MINUTES_PER_HOUR, TIMEZONE, MAX_ERRORS, HEARTBEAT_INTERVAL,
-    BATTERY_ENABLED, BATTERY_STOCK_ID, BATTERY_NAME, SHELLY_PRIORITY_IDS
+    BATTERY_ENABLED, BATTERY_STOCK_ID, BATTERY_NAME, SHELLY_PRIORITY_IDS,
+    BATTERY_SOURCE, BATTERY_SIMULATED_CHARGE_W
 )
 from src.database import init_db, AsyncSessionLocal, EnergyMinute, EnergyHourly, WeatherHourly, BatteryMinute, ShellyCommand
 from src.collector import fetch_shelly, fetch_weather
-from src.battery import get_battery_manager
+from src.battery import get_battery_manager, estimate_simulated_production_w
 from src.shelly_control import execute_battery_decision
 from src.notifier import send_email
 from src.mqtt_publisher import (
@@ -183,11 +184,37 @@ async def main():
     global _main_loop, _http_session
     _main_loop = asyncio.get_running_loop()
     battery_mgr = get_battery_manager()
+    if BATTERY_ENABLED and BATTERY_SOURCE == "simulation":
+        # Resume the digital twin's last simulated SoC across collector restarts.
+        async with AsyncSessionLocal() as db_session:
+            last_soc = await db_session.scalar(
+                select(BatteryMinute.soc_pct)
+                .where(BatteryMinute.is_simulated.is_(True))
+                .order_by(BatteryMinute.timestamp.desc())
+                .limit(1)
+            )
+        if last_soc is not None:
+            battery_mgr.soc_pct = max(5.0, min(100.0, float(last_soc)))
+            logger.info("Resumed simulated battery SoC at %.2f%%", battery_mgr.soc_pct)
 
     async with aiohttp.ClientSession() as session:
         _http_session = session
+        weather_cache_hour = None
+        weather_cache = None
+        load_coverage_warning_active = False
         while True:
             now = datetime.now(tz)
+
+            # The proposal's phase-1 source is weather plus simulated renewable
+            # production. Refresh GHI hourly and reuse it for minute-level steps.
+            current_hour = now.replace(minute=0, second=0, microsecond=0)
+            if BATTERY_ENABLED and BATTERY_SOURCE == "simulation" and current_hour != weather_cache_hour:
+                weather_cache_hour = current_hour
+                weather_cache = await fetch_weather(session, current_hour)
+                if weather_cache is None:
+                    logger.warning("Weather unavailable; virtual renewable production is 0 W this hour")
+                else:
+                    logger.info("Weather GHI for simulated production: %.1f W/m²", weather_cache["ghi"])
             
             # Fetch all shellys concurrently
             tasks = [fetch_shelly(session, dev_id, dev_info) for dev_id, dev_info in SHELLY_DEVICES.items()]
@@ -272,8 +299,33 @@ async def main():
                         res["power_w"] for res in results
                         if res.get("success") and res.get("device_id") in SHELLY_PRIORITY_IDS and res.get("power_w") is not None
                     )
+                    measured_site_load = sum(
+                        res["power_w"] for res in results
+                        if res.get("success") and res.get("power_w") is not None
+                    )
+                    load_meter_ids = {
+                        device_id for device_id, device in SHELLY_DEVICES.items()
+                        if device.get("role") != "monitor_only"
+                    }
+                    measured_load_ids = {
+                        res["device_id"] for res in results
+                        if res.get("success") and res.get("power_w") is not None
+                    }
+                    site_load_complete = bool(load_meter_ids) and load_meter_ids.issubset(measured_load_ids)
+                    if not site_load_complete and not load_coverage_warning_active:
+                        logger.warning("Shelly load coverage incomplete; simulated CHARGE surplus set to 0 W")
+                        load_coverage_warning_active = True
+                    elif site_load_complete:
+                        load_coverage_warning_active = False
+                    simulated_production = estimate_simulated_production_w(
+                        weather_cache.get("ghi") if weather_cache else None,
+                        BATTERY_SIMULATED_CHARGE_W,
+                    )
                     b_reading = await battery_mgr.update_async(
                         active_load_w=priority_active_load,
+                        site_load_w=measured_site_load,
+                        site_load_complete=site_load_complete,
+                        simulated_production_w=simulated_production,
                         dt_seconds=POLL_INTERVAL,
                         timestamp=now
                     )
@@ -292,7 +344,9 @@ async def main():
                             current_a=b_reading.current_a,
                             temperature_c=b_reading.temperature_c,
                             is_simulated=b_reading.is_simulated,
-                            action=b_reading.action
+                            action=b_reading.action,
+                            simulated_production_w=b_reading.simulated_production_w,
+                            simulated_surplus_w=b_reading.simulated_surplus_w
                         )
                         db_session.add(bm)
 

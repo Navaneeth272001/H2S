@@ -47,6 +47,8 @@ class BatteryReading:
     temperature_c: float
     is_simulated: bool
     action: str
+    simulated_production_w: float | None = None
+    simulated_surplus_w: float | None = None
 
     def to_dict(self) -> dict:
         ts = self.timestamp.isoformat()
@@ -64,6 +66,8 @@ class BatteryReading:
             "temperature_c": round(self.temperature_c, 1),
             "is_simulated": self.is_simulated,
             "action": self.action,
+            "simulated_production_w": self.simulated_production_w,
+            "simulated_surplus_w": self.simulated_surplus_w,
         }
 
     def to_h2s_payload(self) -> dict:
@@ -79,7 +83,26 @@ class BatteryReading:
             "voltage_v": round(self.voltage_v, 1),
             "current_a": round(self.current_a, 3),
             "temperature_c": round(self.temperature_c, 1),
+            "is_simulated": self.is_simulated,
         }
+
+
+def estimate_simulated_production_w(ghi_w_m2: float | None, peak_power_w: float) -> float:
+    """Estimate virtual renewable output from forecast GHI (no physical generator assumed).
+
+    The proposal does not specify a generation model. This uses a configurable peak
+    output scaled linearly by irradiance relative to 1,000 W/m², clamped to [0, peak].
+    Missing weather safely yields zero simulated renewable production.
+    """
+    if ghi_w_m2 is None or peak_power_w <= 0:
+        return 0.0
+    try:
+        ghi = float(ghi_w_m2)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(ghi):
+        return 0.0
+    return round(peak_power_w * min(1000.0, max(0.0, ghi)) / 1000.0, 2)
 
 
 class BatteryManager:
@@ -124,6 +147,9 @@ class BatteryManager:
         action: Optional[str] = None,
         dt_seconds: float = 60.0,
         timestamp: Optional[datetime] = None,
+        simulated_production_w: float | None = None,
+        site_load_w: float | None = None,
+        site_load_complete: bool = True,
     ) -> BatteryReading:
         """
         Step battery dynamics based on load and decision action.
@@ -137,14 +163,24 @@ class BatteryManager:
 
         ts = timestamp or datetime.now(timezone.utc)
 
-        # Physics simulation (Chemin B)
+        # Phase 1 digital twin: simulated generation and measured Shelly load
+        # form an estimated site balance. They are not Jackery measurements.
+        default_production = self.charge_power_w if self.current_action == "CHARGE" else 0.0
+        production_w = max(0.0, float(
+            default_production if simulated_production_w is None else simulated_production_w
+        ))
+        measured_site_load_w = max(0.0, float(active_load_w if site_load_w is None else site_load_w))
+        simulated_surplus_w = (
+            max(0.0, production_w - measured_site_load_w) if site_load_complete else 0.0
+        )
         p_charge = 0.0
         p_discharge = 0.0
 
         if self.current_action == "DISCHARGE":
             if BATTERY_SOURCE == "simulation":
-                # Only the explicitly simulated source models battery dynamics.
-                p_discharge = max(0.0, min(float(active_load_w), self.max_power_w))
+                # Virtual generation serves load first; the battery model supplies
+                # the remaining priority load when DISCHARGE was requested.
+                p_discharge = max(0.0, min(float(active_load_w) - production_w, self.max_power_w))
                 d_energy_wh = p_discharge * (dt_seconds / 3600.0)
                 d_soc = (d_energy_wh / self.capacity_wh) * 100.0
                 self.soc_pct = max(10.0, self.soc_pct - d_soc)  # 10% safety cutoff
@@ -152,9 +188,9 @@ class BatteryManager:
 
         elif self.current_action == "CHARGE":
             # Shelly only reports/changes appliance load; it cannot establish
-            # physical battery charging. Simulated source retains its model.
+            # physical battery charging. The twin stores estimated surplus only.
             if BATTERY_SOURCE == "simulation":
-                p_charge = self.charge_power_w
+                p_charge = min(simulated_surplus_w, self.max_power_w)
                 d_energy_wh = p_charge * (dt_seconds / 3600.0)
                 d_soc = (d_energy_wh / self.capacity_wh) * 100.0
                 self.soc_pct = min(100.0, self.soc_pct + d_soc)
@@ -163,8 +199,7 @@ class BatteryManager:
         else:  # STANDBY
             p_charge = 0.0
             p_discharge = 0.0
-            # Minor standby self-discharge (0.01% per hour)
-            self.soc_pct = max(5.0, self.soc_pct - (0.01 * dt_seconds / 3600.0))
+            # The proposal defines standby as maintaining the current SoC.
 
         # Realistic electrical modeling
         # Small voltage droop proportional to discharge power
@@ -190,6 +225,8 @@ class BatteryManager:
             temperature_c=temperature,
             is_simulated=True,
             action=self.current_action,
+            simulated_production_w=production_w,
+            simulated_surplus_w=simulated_surplus_w,
         )
 
     async def update_async(
@@ -198,6 +235,9 @@ class BatteryManager:
         action: Optional[str] = None,
         dt_seconds: float = 60.0,
         timestamp: Optional[datetime] = None,
+        simulated_production_w: float | None = None,
+        site_load_w: float | None = None,
+        site_load_complete: bool = True,
     ) -> Optional[BatteryReading]:
         """Read configured physical telemetry or run simulation.
 
@@ -209,7 +249,14 @@ class BatteryManager:
         ts = timestamp or datetime.now(timezone.utc)
 
         if self._physical_driver is None:
-            return self.update(active_load_w, dt_seconds=dt_seconds, timestamp=ts)
+            return self.update(
+                active_load_w,
+                dt_seconds=dt_seconds,
+                timestamp=ts,
+                simulated_production_w=simulated_production_w,
+                site_load_w=site_load_w,
+                site_load_complete=site_load_complete,
+            )
 
         try:
             phys = await self._physical_driver.read_battery()

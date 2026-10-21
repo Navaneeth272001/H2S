@@ -65,6 +65,8 @@ class BatteryMinute(Base):
     temperature_c = Column(Float)
     is_simulated = Column(Boolean, default=True)
     action = Column(String, default="STANDBY")
+    simulated_production_w = Column(Float, nullable=True)
+    simulated_surplus_w = Column(Float, nullable=True)
 
 class EnergyHourly(Base):
     __tablename__ = "energy_hourly"
@@ -100,3 +102,5 @@ async def init_db():
         await conn.exec_driver_sql("ALTER TABLE energy_minute ADD COLUMN IF NOT EXISTS shelly_model VARCHAR")
         await conn.exec_driver_sql("ALTER TABLE energy_minute ADD COLUMN IF NOT EXISTS shelly_firmware VARCHAR")
         await conn.exec_driver_sql("ALTER TABLE shelly_command ADD COLUMN IF NOT EXISTS result_json VARCHAR")
+        await conn.exec_driver_sql("ALTER TABLE battery_minute ADD COLUMN IF NOT EXISTS simulated_production_w FLOAT")
+        await conn.exec_driver_sql("ALTER TABLE battery_minute ADD COLUMN IF NOT EXISTS simulated_surplus_w FLOAT")

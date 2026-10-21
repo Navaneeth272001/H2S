@@ -18,6 +18,14 @@ Use the repository's existing local Shelly Gen2/3 JSON-RPC assumption (`Shelly.G
 
 The H2S decision remains the input. A shared execution gate selects `simulation`, `dry_run`, or `hardware`; hardware commands require an explicit enable flag. Device role, switch channel, and measurement component can be supplied in `SHELLY_DEVICES_JSON`. Commands are idempotent, bounded-retry, state-verified, and report measured before/after power only when the configured component supplies it. Missing readings remain unavailable. `CHARGE` is reported as a simulated charging scenario because Shelly switching only changes appliance load; it does not command or measure battery charging.
 
+## Phase 1 digital-twin battery simulation
+
+The discussion proposal defines the loop as weather plus simulated renewable production, simulated SoC, H2S decisions, Shelly relay commands, and measured consumption feedback. It does not prescribe a numerical production formula. The collector uses an explicit configurable approximation: Open-Meteo global horizontal irradiance (GHI), clamped to 0–1,000 W/m², scales `BATTERY_SIMULATED_CHARGE_W`, which is the virtual source's peak output at 1,000 W/m². This is not a claim that panels exist or that the Jackery is charging.
+
+At each minute, the collector sums available Shelly active-power measurements. In `CHARGE`, estimated site surplus (`max(virtual production - measured site load, 0)`) is applied to the simulated SoC. In `DISCHARGE`, measured priority load not covered by virtual production is applied as simulated battery output. `STANDBY` holds SoC. If weather is unavailable, virtual production is zero. The model's last simulated SoC is restored from `battery_minute` after collector restarts. Battery rows remain marked `is_simulated`; modeled production and surplus are stored separately from measured Shelly values.
+
+The linear GHI-to-output model is an implementation assumption because the proposal leaves virtual generator capacity and conversion efficiency open. Tune the peak in deployment configuration to the agreed POC scenario. It remains a digital-twin estimate, not Jackery SoC, temperature, charge power, or discharge power telemetry.
+
 ## Hardware dependencies and limits
 
 - Confirm each Shelly model, generation, firmware, IP, channel, measurement component, and wiring before enabling `hardware` mode.

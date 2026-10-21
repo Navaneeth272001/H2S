@@ -67,6 +67,8 @@ The per-agent namespace enforced by broker ACL (`<uuid>` = `AGENT_UUID`):
 
 **Shelly indirect control:** The collector polls Shelly Gen2/3 local JSON-RPC (`Shelly.GetDeviceInfo`, `Shelly.GetStatus`) and can switch configured channels with read-back verification. Control defaults to `SHELLY_EXECUTION_MODE=simulation`; physical switching requires both `SHELLY_EXECUTION_MODE=hardware` and `SHELLY_PHYSICAL_COMMANDS_ENABLED=true`. Set actual IPs, roles, switch channels, and measurement components in `SHELLY_DEVICES_JSON`. `CHARGE` only switches configured non-critical loads off to simulate a charging scenario; it does not charge the battery. Relay state, reported model/firmware, measurement quality, command result, and observed power feedback are kept distinct. See [Shelly commissioning notes](H2S_Shelly_RPi/SHELLY_CONTROL_AUDIT.md).
 
+**Phase 1 battery simulation:** With `BATTERY_SOURCE=simulation`, the collector estimates virtual renewable production from Open-Meteo GHI, scaled by `BATTERY_SIMULATED_CHARGE_W` (peak output at 1,000 W/m²). Measured Shelly consumption offsets this virtual production. `CHARGE` stores simulated surplus, `DISCHARGE` models priority load not met by simulated production, and `STANDBY` holds SoC. This is the discussion proposal's digital-twin loop, not Jackery telemetry; simulated SoC resumes from the last simulated database sample after a collector restart. See [battery integration notes](H2S_Shelly_RPi/SHELLY_CONTROL_AUDIT.md) for the Phase 1 limits.
+
 ### 6. Federated Learning Gradients
 *   **Model**: LightGBM Regressor
 *   **Format**: Histogram gradients and tree parameters serialized as NumPy arrays (transported via Flower framework).
