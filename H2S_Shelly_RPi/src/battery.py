@@ -130,6 +130,8 @@ class BatteryManager:
         Run the simulation model. The async collector uses update_async when
         the socketry physical source is enabled.
         """
+        if self._physical_driver is not None:
+            raise RuntimeError("BATTERY_SOURCE=socketry requires awaiting update_async(); refusing simulated data")
         if action:
             self.set_action(action)
 
