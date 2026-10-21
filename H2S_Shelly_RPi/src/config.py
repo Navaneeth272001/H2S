@@ -56,6 +56,13 @@ BATTERY_MAX_POWER_W = float(os.getenv("BATTERY_MAX_POWER_W", "1000.0"))
 BATTERY_INITIAL_SOC = float(os.getenv("BATTERY_INITIAL_SOC", "85.0"))
 BATTERY_SIMULATED_CHARGE_W = float(os.getenv("BATTERY_SIMULATED_CHARGE_W", "500.0"))
 
+# Optional Jackery telemetry through the third-party ``socketry`` client.
+# Keep simulation as the default until the operator explicitly enables it.
+BATTERY_SOURCE = os.getenv("BATTERY_SOURCE", "simulation").strip().lower()
+JACKERY_EMAIL = os.getenv("JACKERY_EMAIL", "")
+JACKERY_PASSWORD = os.getenv("JACKERY_PASSWORD", "")
+JACKERY_DEVICE_SN = os.getenv("JACKERY_DEVICE_SN", "")
+
 # Local Mosquitto topic for battery status (consumed by h2s_agent)
 MQTT_TOPIC_BATTERY_STATUS = os.getenv("MQTT_TOPIC_BATTERY_STATUS", "h2s/site4/battery/status")
 

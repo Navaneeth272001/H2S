@@ -159,51 +159,54 @@ async def main():
                         res["power_w"] for res in results
                         if res.get("success") and res.get("device_id") in SHELLY_PRIORITY_IDS and res.get("power_w") is not None
                     )
-                    b_reading = battery_mgr.update(
+                    b_reading = await battery_mgr.update_async(
                         active_load_w=priority_active_load,
                         dt_seconds=POLL_INTERVAL,
                         timestamp=now
                     )
 
-                    bm = BatteryMinute(
-                        timestamp=now.replace(tzinfo=None),
-                        stock_id=b_reading.stock_id,
-                        name=b_reading.name,
-                        soc_pct=b_reading.soc_pct,
-                        power_charge_w=b_reading.power_charge_w,
-                        power_discharge_w=b_reading.power_discharge_w,
-                        voltage_v=b_reading.voltage_v,
-                        current_a=b_reading.current_a,
-                        temperature_c=b_reading.temperature_c,
-                        is_simulated=b_reading.is_simulated,
-                        action=b_reading.action
-                    )
-                    db_session.add(bm)
+                    if b_reading is None:
+                        logger.warning("Battery sample skipped; no physical reading was available.")
+                    else:
+                        bm = BatteryMinute(
+                            timestamp=now.replace(tzinfo=None),
+                            stock_id=b_reading.stock_id,
+                            name=b_reading.name,
+                            soc_pct=b_reading.soc_pct,
+                            power_charge_w=b_reading.power_charge_w,
+                            power_discharge_w=b_reading.power_discharge_w,
+                            voltage_v=b_reading.voltage_v,
+                            current_a=b_reading.current_a,
+                            temperature_c=b_reading.temperature_c,
+                            is_simulated=b_reading.is_simulated,
+                            action=b_reading.action
+                        )
+                        db_session.add(bm)
 
-                    # Publish battery telemetrie packet
-                    publish_battery_minute(
-                        stock_id=b_reading.stock_id,
-                        battery_name=b_reading.name,
-                        soc_pct=b_reading.soc_pct,
-                        power_charge_w=b_reading.power_charge_w,
-                        power_discharge_w=b_reading.power_discharge_w,
-                        voltage_v=b_reading.voltage_v,
-                        current_a=b_reading.current_a,
-                        temperature_c=b_reading.temperature_c,
-                        timestamp=now
-                    )
+                        # Publish battery telemetrie packet
+                        publish_battery_minute(
+                            stock_id=b_reading.stock_id,
+                            battery_name=b_reading.name,
+                            soc_pct=b_reading.soc_pct,
+                            power_charge_w=b_reading.power_charge_w,
+                            power_discharge_w=b_reading.power_discharge_w,
+                            voltage_v=b_reading.voltage_v,
+                            current_a=b_reading.current_a,
+                            temperature_c=b_reading.temperature_c,
+                            timestamp=now
+                        )
 
-                    # Publish battery status to local broker for h2s_agent
-                    publish_battery_status_h2s(
-                        stock_id=b_reading.stock_id,
-                        soc_pct=b_reading.soc_pct,
-                        power_charge_w=b_reading.power_charge_w,
-                        power_discharge_w=b_reading.power_discharge_w,
-                        voltage_v=b_reading.voltage_v,
-                        current_a=b_reading.current_a,
-                        temperature_c=b_reading.temperature_c,
-                        timestamp=now
-                    )
+                        # Publish battery status to local broker for h2s_agent
+                        publish_battery_status_h2s(
+                            stock_id=b_reading.stock_id,
+                            soc_pct=b_reading.soc_pct,
+                            power_charge_w=b_reading.power_charge_w,
+                            power_discharge_w=b_reading.power_discharge_w,
+                            voltage_v=b_reading.voltage_v,
+                            current_a=b_reading.current_a,
+                            temperature_c=b_reading.temperature_c,
+                            timestamp=now
+                        )
 
                 await db_session.commit()
                 

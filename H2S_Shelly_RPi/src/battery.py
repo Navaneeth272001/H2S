@@ -28,6 +28,7 @@ from .config import (
     BATTERY_MAX_POWER_W,
     BATTERY_INITIAL_SOC,
     BATTERY_SIMULATED_CHARGE_W,
+    BATTERY_SOURCE,
 )
 
 logger = logging.getLogger("battery_manager")
@@ -100,7 +101,12 @@ class BatteryManager:
         self.soc_pct = max(5.0, min(100.0, initial_soc))
         self.charge_power_w = charge_power_w
         self.current_action = "STANDBY"
-        self._physical_driver = None  # Hook for Jackery / BMS driver (Chemin A)
+        self._physical_driver = None
+        if BATTERY_SOURCE == "socketry":
+            from .jackery_api import JackeryClient
+            self._physical_driver = JackeryClient()
+        elif BATTERY_SOURCE != "simulation":
+            raise ValueError(f"Unsupported BATTERY_SOURCE={BATTERY_SOURCE!r}; use simulation or socketry")
 
     def set_action(self, action: str):
         """Update current operational action from AI decision: CHARGE, DISCHARGE, STANDBY."""
@@ -121,36 +127,15 @@ class BatteryManager:
     ) -> BatteryReading:
         """
         Step battery dynamics based on load and decision action.
-        If physical hardware is connected, attempts to read physical state;
-        otherwise runs simulation loop.
+        Run the simulation model. The async collector uses update_async when
+        the socketry physical source is enabled.
         """
         if action:
             self.set_action(action)
 
         ts = timestamp or datetime.now(timezone.utc)
 
-        # 1. Check physical hardware driver (Chemin A) if configured
-        if self._physical_driver and hasattr(self._physical_driver, "read_battery"):
-            try:
-                phys = self._physical_driver.read_battery()
-                if phys:
-                    return BatteryReading(
-                        timestamp=ts,
-                        stock_id=self.stock_id,
-                        name=self.name,
-                        soc_pct=phys.get("soc_pct", self.soc_pct),
-                        power_charge_w=phys.get("power_charge_w", 0.0),
-                        power_discharge_w=phys.get("power_discharge_w", active_load_w),
-                        voltage_v=phys.get("voltage_v", self.voltage_nominal),
-                        current_a=phys.get("current_a", 0.0),
-                        temperature_c=phys.get("temperature_c", 22.0),
-                        is_simulated=False,
-                        action=self.current_action,
-                    )
-            except Exception as e:
-                logger.warning(f"Physical battery read failed: {e}. Falling back to simulation.")
-
-        # 2. Physics simulation (Chemin B)
+        # Physics simulation (Chemin B)
         p_charge = 0.0
         p_discharge = 0.0
 
@@ -200,6 +185,45 @@ class BatteryManager:
             current_a=current,
             temperature_c=temperature,
             is_simulated=True,
+            action=self.current_action,
+        )
+
+    async def update_async(
+        self,
+        active_load_w: float = 0.0,
+        action: Optional[str] = None,
+        dt_seconds: float = 60.0,
+        timestamp: Optional[datetime] = None,
+    ) -> Optional[BatteryReading]:
+        """Read configured physical telemetry or run simulation.
+
+        A failed physical read returns ``None``. It never falls back to
+        simulated data while ``BATTERY_SOURCE=socketry`` is configured.
+        """
+        if action:
+            self.set_action(action)
+        ts = timestamp or datetime.now(timezone.utc)
+
+        if self._physical_driver is None:
+            return self.update(active_load_w, dt_seconds=dt_seconds, timestamp=ts)
+
+        try:
+            phys = await self._physical_driver.read_battery()
+        except Exception as exc:
+            logger.error("Physical Jackery read failed; skipping battery sample: %s", exc)
+            return None
+
+        return BatteryReading(
+            timestamp=ts,
+            stock_id=self.stock_id,
+            name=self.name,
+            soc_pct=phys["soc_pct"],
+            power_charge_w=phys["power_charge_w"],
+            power_discharge_w=phys["power_discharge_w"],
+            voltage_v=phys["voltage_v"],
+            current_a=phys["current_a"],
+            temperature_c=phys["temperature_c"],
+            is_simulated=False,
             action=self.current_action,
         )
 

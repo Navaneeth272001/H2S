@@ -63,6 +63,8 @@ The per-agent namespace enforced by broker ACL (`<uuid>` = `AGENT_UUID`):
 *   `current_a`: Battery Current (Amperes)
 *   `temperature_c`: Battery Pack Temperature (Celsius)
 
+**Jackery live telemetry:** The collector can opt in to polling Jackery through the third-party `socketry` package. This uses Jackery's unofficial cloud API, requires internet access and supported device firmware/model, and is read-only in this integration. Set `BATTERY_SOURCE=socketry`, `JACKERY_EMAIL`, `JACKERY_PASSWORD`, and `JACKERY_DEVICE_SN` in the collector `.env`. When enabled, a failed physical read is skipped rather than replaced by simulated telemetry. The `socketry` project currently lists Explorer 3000 Pro, 2000 Plus, 300 Plus, 1000 Plus, 700 Plus, 280 Plus, 1000 Pro2, 600 Plus, 240, and 2000; verify your exact model before enabling it.
+
 ### 6. Federated Learning Gradients
 *   **Model**: LightGBM Regressor
 *   **Format**: Histogram gradients and tree parameters serialized as NumPy arrays (transported via Flower framework).

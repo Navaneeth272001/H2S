@@ -1,117 +1,98 @@
-"""
-Jackery Direct API Client & Feasibility Study Module (Chemin A)
-===============================================================
-Implements direct battery communication via Jackery Cloud API / socketry protocol.
+"""Read Jackery telemetry through the third-party ``socketry`` client.
 
-Reference:
-- Socketry / Jackery Cloud Protocol (Reverse-engineered unofficial API)
-- Jackery Explorer series (1000, 2000 Pro, 3000 Pro, Plus)
-
-Capabilities:
-1. Read real battery state (SoC, input charging power, output AC/DC power, voltage, temp)
-2. Direct AC output control (turn ON/OFF physical inverter)
-3. Battery protection and eco-mode management
+This uses Jackery's cloud HTTP property endpoint. It is read-only and does not
+send control commands to the power station. ``socketry`` reverse engineers an
+unofficial API and supports only the models listed in its own documentation.
 """
 
 import logging
-import os
-import time
-from typing import Optional, Dict, Any
+from typing import Any
+
+from .config import JACKERY_DEVICE_SN, JACKERY_EMAIL, JACKERY_PASSWORD
 
 logger = logging.getLogger("jackery_api")
 
 
+def _number(value: Any, property_name: str) -> float:
+    """Convert a socketry raw property value into a finite numeric reading."""
+    if isinstance(value, bool) or value is None:
+        raise ValueError(f"Jackery property {property_name!r} is unavailable")
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Jackery property {property_name!r} is not numeric: {value!r}") from exc
+    if not (-1e9 < result < 1e9):
+        raise ValueError(f"Jackery property {property_name!r} is outside a valid range")
+    return result
+
+
 class JackeryClient:
-    """
-    Direct interface to Jackery portable power stations.
-    Supports credentials authentication, telemetry polling, and relay commands.
-    """
+    """Persistent async reader for a selected Jackery station."""
 
-    def __init__(
-        self,
-        email: Optional[str] = None,
-        password: Optional[str] = None,
-        device_sn: Optional[str] = None,
-        api_base: str = "https://api.jackery.com/v1"
-    ):
-        self.email = email or os.getenv("JACKERY_EMAIL", "")
-        self.password = password or os.getenv("JACKERY_PASSWORD", "")
-        self.device_sn = device_sn or os.getenv("JACKERY_DEVICE_SN", "")
-        self.api_base = api_base
-        self.token: Optional[str] = None
-        self.is_connected = False
-        self._last_state: Dict[str, Any] = {}
+    def __init__(self, email: str = JACKERY_EMAIL, password: str = JACKERY_PASSWORD,
+                 device_sn: str = JACKERY_DEVICE_SN):
+        self.email = email
+        self.password = password
+        self.device_sn = device_sn
+        self._client = None
+        self._device = None
 
-    def login(self) -> bool:
-        """Authenticate with Jackery cloud service."""
+    async def _connect(self):
         if not self.email or not self.password:
-            logger.info("Jackery credentials not set; direct hardware comms disabled (using Chemin B).")
-            return False
+            raise RuntimeError("Set JACKERY_EMAIL and JACKERY_PASSWORD in the collector .env")
+        if not self.device_sn:
+            raise RuntimeError("Set JACKERY_DEVICE_SN to the station serial number")
 
         try:
-            # Here we would authenticate against Jackery authentication endpoint
-            # e.g. POST /auth/login with email and password
-            logger.info(f"Authenticating Jackery account for {self.email}...")
-            # For POC without live internet Jackery account, keep credentials noted
-            self.token = f"jk_token_{int(time.time())}"
-            self.is_connected = True
-            logger.info("Jackery account authenticated successfully.")
-            return True
-        except Exception as e:
-            logger.warning(f"Jackery login failed: {e}")
-            self.is_connected = False
-            return False
+            from socketry import Client
+        except ImportError as exc:
+            raise RuntimeError("socketry is not installed; rebuild/reinstall collector requirements") from exc
 
-    def read_battery(self) -> Optional[Dict[str, Any]]:
-        """
-        Read live status from Jackery station:
-        Returns:
-            soc_pct: float
-            power_charge_w: float
-            power_discharge_w: float
-            voltage_v: float
-            current_a: float
-            temperature_c: float
-        """
-        if not self.is_connected and not self.login():
-            return None
+        client = await Client.login(self.email, self.password)
+        devices = await client.fetch_devices()
+        matched = next((d for d in devices if str(d.get("devSn", "")) == self.device_sn), None)
+        if matched is None:
+            available = ", ".join(str(d.get("devSn", "?")) for d in devices) or "none"
+            raise RuntimeError(
+                f"Jackery serial {self.device_sn!r} was not found in this account (devices: {available})"
+            )
+        self._client = client
+        self._device = client.device(self.device_sn)
+        logger.info("Connected to Jackery device %s (%s)", self.device_sn, matched.get("devName", "unknown model"))
 
-        try:
-            # When socketry / live device is paired:
-            # queries device endpoint for live telemetry
-            # e.g.:
-            # soc_pct = device.battery_percentage
-            # p_out = device.ac_output_power + device.dc_output_power
-            # p_in = device.input_power
-            return {
-                "soc_pct": self._last_state.get("soc_pct", 85.0),
-                "power_charge_w": self._last_state.get("power_charge_w", 0.0),
-                "power_discharge_w": self._last_state.get("power_discharge_w", 0.0),
-                "voltage_v": 230.0,
-                "current_a": 0.0,
-                "temperature_c": 22.0,
-                "ac_output_on": self._last_state.get("ac_on", True)
-            }
-        except Exception as e:
-            logger.error(f"Failed to read live Jackery state: {e}")
-            return None
+    async def read_battery(self) -> dict[str, float]:
+        """Poll real station properties; fail the sample if required data is absent."""
+        if self._device is None:
+            await self._connect()
 
-    def set_ac(self, enabled: bool) -> bool:
-        """Control AC output relay on Jackery unit (socketry set ac on/off)."""
-        if not self.is_connected and not self.login():
-            return False
+        # Each property lookup uses socketry's documented raw property API.
+        # Keep these values strict: a failed/missing reading must not be sent as
+        # a fabricated simulated value under a physical telemetry stream.
+        properties = {}
+        for name in ("battery", "input-power", "output-power", "ac-voltage", "battery-temp"):
+            try:
+                _setting, value = await self._device.get_property(name)
+            except (KeyError, ValueError) as exc:
+                raise RuntimeError(f"Jackery did not provide required property {name!r}: {exc}") from exc
+            properties[name] = _number(value, name)
 
-        try:
-            logger.info(f"Setting Jackery AC output to {'ON' if enabled else 'OFF'}")
-            self._last_state["ac_on"] = enabled
-            return True
-        except Exception as e:
-            logger.error(f"Failed to set Jackery AC output: {e}")
-            return False
+        soc = properties["battery"]
+        voltage = properties["ac-voltage"]
+        if not 0 <= soc <= 100:
+            raise ValueError(f"Jackery SoC is outside 0–100%: {soc}")
+        if voltage <= 0:
+            raise ValueError(f"Jackery inverter voltage is unavailable: {voltage}")
 
-    def set_eco_mode(self, enabled: bool) -> bool:
-        """Configure battery protection eco mode."""
-        if not self.is_connected and not self.login():
-            return False
-        logger.info(f"Setting Jackery eco mode: {enabled}")
-        return True
+        charge_w = max(0.0, properties["input-power"])
+        discharge_w = max(0.0, properties["output-power"])
+        net_power_w = abs(discharge_w - charge_w)
+        return {
+            "soc_pct": soc,
+            "power_charge_w": charge_w,
+            "power_discharge_w": discharge_w,
+            "voltage_v": voltage,
+            # Socketry exposes station input/output power, not battery current;
+            # current is derived from the measured net power and AC voltage.
+            "current_a": net_power_w / voltage,
+            "temperature_c": properties["battery-temp"],
+        }
