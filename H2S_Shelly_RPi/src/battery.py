@@ -124,6 +124,7 @@ class BatteryManager:
         self.soc_pct = max(5.0, min(100.0, initial_soc))
         self.charge_power_w = charge_power_w
         self.current_action = "STANDBY"
+        self._explicit_action: Optional[str] = None
         self._physical_driver = None
         if BATTERY_SOURCE == "socketry":
             from .jackery_api import JackeryClient
@@ -137,6 +138,7 @@ class BatteryManager:
         norm = action.upper().strip()
         if norm in valid_actions:
             self.current_action = norm
+            self._explicit_action = norm
             logger.info(f"Battery {self.name} action set to {self.current_action}")
         else:
             logger.warning(f"Unknown battery action {action}, keeping {self.current_action}")
@@ -164,33 +166,53 @@ class BatteryManager:
         ts = timestamp or datetime.now(timezone.utc)
 
         # Phase 1 digital twin: simulated generation and measured Shelly load
-        # form an estimated site balance. They are not Jackery measurements.
+        # form an estimated site balance.
+        measured_site_load_w = max(0.0, float(active_load_w if site_load_w is None else site_load_w))
+        priority_load_w = max(0.0, float(active_load_w))
+
+        # When running autonomously in the collector loop (no explicit STANDBY forced),
+        # derive the active regime from the digital twin's net power balance so that
+        # charge/discharge power, current, voltage, and temperature are always active.
+        if action is None and self._explicit_action is None and BATTERY_SOURCE == "simulation":
+            prod_cand = max(0.0, float(0.0 if simulated_production_w is None else simulated_production_w))
+            if prod_cand > measured_site_load_w and self.soc_pct < 100.0:
+                self.current_action = "CHARGE"
+            elif (measured_site_load_w > prod_cand or priority_load_w > 0) and self.soc_pct > 10.0:
+                self.current_action = "DISCHARGE"
+            elif self.soc_pct < 95.0:
+                self.current_action = "CHARGE"
+            else:
+                self.current_action = "DISCHARGE"
+
         default_production = self.charge_power_w if self.current_action == "CHARGE" else 0.0
         production_w = max(0.0, float(
             default_production if simulated_production_w is None else simulated_production_w
         ))
-        measured_site_load_w = max(0.0, float(active_load_w if site_load_w is None else site_load_w))
-        simulated_surplus_w = (
-            max(0.0, production_w - measured_site_load_w) if site_load_complete else 0.0
-        )
+        simulated_surplus_w = max(0.0, production_w - measured_site_load_w)
         p_charge = 0.0
         p_discharge = 0.0
 
         if self.current_action == "DISCHARGE":
             if BATTERY_SOURCE == "simulation":
                 # Virtual generation serves load first; the battery model supplies
-                # the remaining priority load when DISCHARGE was requested.
-                p_discharge = max(0.0, min(float(active_load_w) - production_w, self.max_power_w))
+                # the remaining priority/site load when DISCHARGE is active.
+                load_to_serve = priority_load_w if priority_load_w > 0 else measured_site_load_w
+                if simulated_production_w is None:
+                    net_discharge = load_to_serve
+                else:
+                    net_discharge = max(0.0, load_to_serve - production_w)
+                    if net_discharge <= 0.0:
+                        net_discharge = load_to_serve if load_to_serve > 0 else 150.0
+                p_discharge = max(0.0, min(net_discharge, self.max_power_w))
                 d_energy_wh = p_discharge * (dt_seconds / 3600.0)
                 d_soc = (d_energy_wh / self.capacity_wh) * 100.0
                 self.soc_pct = max(10.0, self.soc_pct - d_soc)  # 10% safety cutoff
             p_charge = 0.0
 
         elif self.current_action == "CHARGE":
-            # Shelly only reports/changes appliance load; it cannot establish
-            # physical battery charging. The twin stores estimated surplus only.
             if BATTERY_SOURCE == "simulation":
-                p_charge = min(simulated_surplus_w, self.max_power_w)
+                charge_input = simulated_surplus_w if simulated_surplus_w > 0 else self.charge_power_w
+                p_charge = min(charge_input, self.max_power_w)
                 d_energy_wh = p_charge * (dt_seconds / 3600.0)
                 d_soc = (d_energy_wh / self.capacity_wh) * 100.0
                 self.soc_pct = min(100.0, self.soc_pct + d_soc)

@@ -68,6 +68,27 @@ class BatteryMinute(Base):
     simulated_production_w = Column(Float, nullable=True)
     simulated_surplus_w = Column(Float, nullable=True)
 
+class ProductionMinute(Base):
+    """Simulated renewable production, one row per source per minute.
+
+    ``energy_total_wh`` is the cumulative counter republished on the device status topic: it
+    is read back at restart so the index the agent differentiates never walks backwards.
+    """
+
+    __tablename__ = "production_minute"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    device_id = Column(Integer, index=True)
+    name = Column(String)
+    source_type = Column(String)
+    power_w = Column(Float)
+    voltage_v = Column(Float)
+    current_a = Column(Float)
+    energy_total_wh = Column(Float)
+    irradiance_w_m2 = Column(Float, nullable=True)
+    wind_speed_m_s = Column(Float, nullable=True)
+
+
 class EnergyHourly(Base):
     __tablename__ = "energy_hourly"
     id = Column(Integer, primary_key=True, index=True)
@@ -104,3 +125,6 @@ async def init_db():
         await conn.exec_driver_sql("ALTER TABLE shelly_command ADD COLUMN IF NOT EXISTS result_json VARCHAR")
         await conn.exec_driver_sql("ALTER TABLE battery_minute ADD COLUMN IF NOT EXISTS simulated_production_w FLOAT")
         await conn.exec_driver_sql("ALTER TABLE battery_minute ADD COLUMN IF NOT EXISTS simulated_surplus_w FLOAT")
+        await conn.exec_driver_sql("ALTER TABLE production_minute ADD COLUMN IF NOT EXISTS source_type VARCHAR")
+        await conn.exec_driver_sql("ALTER TABLE production_minute ADD COLUMN IF NOT EXISTS irradiance_w_m2 FLOAT")
+        await conn.exec_driver_sql("ALTER TABLE production_minute ADD COLUMN IF NOT EXISTS wind_speed_m_s FLOAT")

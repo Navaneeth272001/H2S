@@ -20,10 +20,29 @@
     { "device_id": 12, "kind": "h2s_json", "topic": "h2s/devices/12/status", "role": "CONSUMPTION" },
     { "device_id": 13, "kind": "h2s_json", "topic": "h2s/devices/13/status", "role": "CONSUMPTION" },
     { "device_id": 14, "kind": "h2s_json", "topic": "h2s/devices/14/status", "role": "CONSUMPTION" },
-    { "device_id": 15, "kind": "h2s_json", "topic": "h2s/devices/15/status", "role": "CONSUMPTION" }
+    { "device_id": 15, "kind": "h2s_json", "topic": "h2s/devices/15/status", "role": "CONSUMPTION" },
+    { "device_id": 20, "kind": "h2s_json", "topic": "h2s/devices/20/status", "role": "PRODUCTION" },
+    { "device_id": 21, "kind": "h2s_json", "topic": "h2s/devices/21/status", "role": "PRODUCTION" }
   ],
   "batteries": [
     { "stock_id": 1, "status_topic": "h2s/site4/battery/status", "command_prefix": "h2s/site4/commands" }
+  ],
+  "sources": [
+    {
+      "source_id": 20,
+      "type": "solar",
+      "surface_m2": 10.0,
+      "rendement_pv": 0.22
+    },
+    {
+      "source_id": 21,
+      "type": "wind",
+      "diametre_rotor_m": 3.0,
+      "rendement_eolien": 0.35,
+      "vent_demarrage_m_s": 3.0,
+      "vent_arret_m_s": 25.0,
+      "puissance_nominale_w": 2000.0
+    }
   ],
   "weather_topic": "h2s/site4/weather/status",
   "local_api_port": 8765,

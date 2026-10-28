@@ -67,6 +67,13 @@ JACKERY_DEVICE_SN = os.getenv("JACKERY_DEVICE_SN", "")
 
 # Local Mosquitto topic for battery status (consumed by h2s_agent)
 MQTT_TOPIC_BATTERY_STATUS = os.getenv("MQTT_TOPIC_BATTERY_STATUS", "h2s/site4/battery/status")
+# Local Mosquitto topic prefix where h2s_agent publishes battery commands (/charge, /discharge, /standby)
+MQTT_TOPIC_BATTERY_COMMANDS = os.getenv("MQTT_TOPIC_BATTERY_COMMANDS", "h2s/site4/commands")
+
+# Local Mosquitto topic for weather, in the H2S gateway format read by h2s_agent
+# (parsers.h2s_weather). The legacy per-sensor packets on the agent telemetry topic
+# are not subscribed by h2s_agent, so weather never reached the cloud that way.
+MQTT_TOPIC_WEATHER_STATUS = os.getenv("MQTT_TOPIC_WEATHER_STATUS", "h2s/site4/weather/status")
 
 # Shelly configuration is overridable as JSON so channel/role assumptions stay
 # in deployment config. The built-in map preserves the existing installation.
@@ -128,6 +135,144 @@ SHELLY_PHYSICAL_COMMANDS_ENABLED = os.getenv("SHELLY_PHYSICAL_COMMANDS_ENABLED",
 SHELLY_COMMAND_TIMEOUT_SECONDS = float(os.getenv("SHELLY_COMMAND_TIMEOUT_SECONDS", "5"))
 SHELLY_MAX_RETRIES = max(0, int(os.getenv("SHELLY_MAX_RETRIES", "2")))
 SHELLY_EFFECT_THRESHOLD_W = max(0.0, float(os.getenv("SHELLY_EFFECT_THRESHOLD_W", "5")))
+
+# Renewable production sources (digital twin)
+# -----------------------------------------------------------------------------
+# Production is NOT a field of the payload: the cloud decides whether a
+# "source: device" reading counts as production (solar / wind) or consumption
+# from the role declared on the site for that device. Every simulated source
+# therefore publishes under its own device_id, and that device must be declared
+# on the site as SOLAR or WIND. An undeclared device_id makes the cloud reject
+# the record (fail-closed), which is why the ids are configuration, never guessed.
+#
+# Physics of the client specification (§4.1.4):
+#   P_PV   = G × S × η_PV
+#   P_wind = ½ × ρ × A × V³ × η_wind,  A = π × (D / 2)²
+AIR_DENSITY_KG_M3 = 1.225
+PV_EFFICIENCY_DEFAULT = 0.22
+WIND_EFFICIENCY_DEFAULT = 0.35
+
+# AC side the production meters read (inverter output).
+PRODUCTION_AC_VOLTAGE_V = float(os.getenv("PRODUCTION_AC_VOLTAGE_V", "230.0"))
+PRODUCTION_POWER_FACTOR = float(os.getenv("PRODUCTION_POWER_FACTOR", "0.98"))
+# Below this output an inverter is considered asleep and reports 0 W.
+PRODUCTION_MIN_OUTPUT_W = max(0.0, float(os.getenv("PRODUCTION_MIN_OUTPUT_W", "5")))
+
+_legacy_production_sources = {
+    20: {"name": "ROOFTOP PV (SIMULATED)", "type": "SOLAR", "surface_m2": 10.0, "efficiency": 0.22},
+    21: {
+        "name": "WIND TURBINE (SIMULATED)",
+        "type": "WIND",
+        "rotor_diameter_m": 3.0,
+        "efficiency": 0.35,
+        "cut_in_m_s": 3.0,
+        "cut_out_m_s": 25.0,
+        "rated_power_w": 2000.0,
+    },
+}
+
+
+def _positive(value, what: str, key: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"production source {key!r}: {what} must be a number") from None
+    if number <= 0:
+        raise ValueError(f"production source {key!r}: {what} must be positive")
+    return number
+
+
+def _load_production_sources() -> dict[int, dict]:
+    """Simulated production sources from ``PRODUCTION_SOURCES_JSON``.
+
+    An empty JSON object disables the feature and the collector then reports the
+    battery only, exactly as before. Nothing is invented at runtime: a source
+    missing a physical characteristic is a configuration error, not a silently
+    zero-producing source.
+    """
+    raw = os.getenv("PRODUCTION_SOURCES_JSON", "").strip()
+    sources = json.loads(raw) if raw else dict(_legacy_production_sources)
+    if not isinstance(sources, dict):
+        raise ValueError("PRODUCTION_SOURCES_JSON must be a JSON object keyed by H2S device ID")
+
+    # If /etc/h2s-agent/agent.json exists on the Pi and declares additional
+    # PRODUCTION device IDs, include them so no declared production source is silent.
+    agent_cfg_path = os.getenv("H2S_AGENT_CONFIG", "/etc/h2s-agent/agent.json")
+    if not raw and os.path.isfile(agent_cfg_path):
+        try:
+            with open(agent_cfg_path, encoding="utf-8") as fh:
+                agent_cfg = json.load(fh)
+            agent_sources = {
+                int(s["source_id"]): s
+                for s in (agent_cfg.get("sources") or [])
+                if isinstance(s, dict) and s.get("source_id") is not None
+            }
+            prod_devs = [
+                int(d["device_id"])
+                for d in (agent_cfg.get("devices") or [])
+                if isinstance(d, dict)
+                and str(d.get("role", "")).upper() == "PRODUCTION"
+                and d.get("device_id") is not None
+            ]
+            for idx, dev_id in enumerate(prod_devs):
+                if dev_id in sources or str(dev_id) in sources:
+                    continue
+                src_meta = agent_sources.get(dev_id, {})
+                stype = str(src_meta.get("type", "SOLAR" if idx % 2 == 0 else "WIND")).upper()
+                if stype == "SOLAR":
+                    sources[dev_id] = {
+                        "name": f"ROOFTOP PV {dev_id} (SIMULATED)",
+                        "type": "SOLAR",
+                        "surface_m2": float(src_meta.get("surface_m2") or 10.0),
+                        "efficiency": float(src_meta.get("rendement_pv") or PV_EFFICIENCY_DEFAULT),
+                    }
+                else:
+                    sources[dev_id] = {
+                        "name": f"WIND TURBINE {dev_id} (SIMULATED)",
+                        "type": "WIND",
+                        "rotor_diameter_m": float(src_meta.get("diametre_rotor_m") or 3.0),
+                        "efficiency": float(src_meta.get("rendement_eolien") or WIND_EFFICIENCY_DEFAULT),
+                        "cut_in_m_s": float(src_meta.get("vent_demarrage_m_s") or 3.0),
+                        "cut_out_m_s": float(src_meta.get("vent_arret_m_s") or 25.0),
+                        "rated_power_w": float(src_meta.get("puissance_nominale_w") or 2000.0),
+                    }
+        except Exception:
+            pass
+
+    normalized: dict[int, dict] = {}
+    for key, value in sources.items():
+        device_id = int(key)
+        if not isinstance(value, dict):
+            raise ValueError(f"production source {key!r} must be an object")
+        source_type = str(value.get("type", "")).upper()
+        if source_type not in ("SOLAR", "WIND"):
+            raise ValueError(f"production source {key!r}: type must be SOLAR or WIND ({source_type!r})")
+        default_efficiency = PV_EFFICIENCY_DEFAULT if source_type == "SOLAR" else WIND_EFFICIENCY_DEFAULT
+        item = {
+            "device_id": device_id,
+            "name": str(value.get("name", f"{source_type.title()} {device_id}")),
+            "type": source_type,
+            "efficiency": float(value.get("efficiency", default_efficiency)),
+        }
+        if not 0.0 < item["efficiency"] <= 1.0:
+            raise ValueError(f"production source {key!r}: efficiency must be in (0, 1]")
+        if source_type == "SOLAR":
+            item["surface_m2"] = _positive(value.get("surface_m2"), "surface_m2", key)
+        else:
+            item["rotor_diameter_m"] = _positive(value.get("rotor_diameter_m"), "rotor_diameter_m", key)
+            item["cut_in_m_s"] = max(0.0, float(value.get("cut_in_m_s", 0.0)))
+            cut_out = float(value.get("cut_out_m_s", 0.0))
+            item["cut_out_m_s"] = cut_out if cut_out > 0 else None
+            rated = value.get("rated_power_w")
+            item["rated_power_w"] = _positive(rated, "rated_power_w", key) if rated is not None else None
+            if item["cut_out_m_s"] is not None and item["cut_out_m_s"] <= item["cut_in_m_s"]:
+                raise ValueError(f"production source {key!r}: cut_out_m_s must exceed cut_in_m_s")
+        normalized[device_id] = item
+    return normalized
+
+
+PRODUCTION_SOURCES = _load_production_sources()
+PRODUCTION_ENABLED = bool(PRODUCTION_SOURCES)
 
 WEATHER_CODES = {
     0: "Clear Sky",

@@ -24,7 +24,8 @@ from .config import (
     MQTT_CLIENT_ID, AGENT_UUID,
     MQTT_TOPIC_TELEMETRIE, MQTT_TOPIC_COMPTES_RENDUS,
     MQTT_TOPIC_ETAT, MQTT_TOPIC_ORDRES,
-    MQTT_TOPIC_BATTERY_STATUS
+    MQTT_TOPIC_BATTERY_STATUS, MQTT_TOPIC_BATTERY_COMMANDS,
+    MQTT_TOPIC_WEATHER_STATUS
 )
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,10 @@ def _on_connect(client, userdata, flags, rc, properties=None):
         logger.info(f"Connected to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
         client.subscribe(MQTT_TOPIC_ORDRES, qos=QOS)
         logger.info(f"Subscribed to {MQTT_TOPIC_ORDRES}")
+        if MQTT_TOPIC_BATTERY_COMMANDS:
+            cmd_wildcard = f"{MQTT_TOPIC_BATTERY_COMMANDS.rstrip('/')}/+"
+            client.subscribe(cmd_wildcard, qos=QOS)
+            logger.info(f"Subscribed to local agent battery commands on {cmd_wildcard}")
     else:
         logger.error(f"MQTT connection failed with code {rc}")
 
@@ -53,8 +58,13 @@ def _on_message(client, userdata, msg):
     logger.info(f"Received order on {msg.topic}")
     if _ordres_callback is not None:
         try:
-            # Pass the raw payload to the callback
-            data = json.loads(msg.payload)
+            # Pass the raw payload to the callback; if the topic is h2s/site4/commands/<action>,
+            # ensure action is populated if not already in the JSON body.
+            data = json.loads(msg.payload) if msg.payload else {}
+            if isinstance(data, dict) and "action" not in data and "/" in msg.topic:
+                leaf = msg.topic.rsplit("/", 1)[-1].upper()
+                if leaf in ("CHARGE", "DISCHARGE", "STANDBY"):
+                    data["action"] = leaf
             _ordres_callback(data)
         except Exception as e:
             logger.error(f"Error processing incoming order: {e}")
@@ -158,9 +168,17 @@ def publish_energy_minute(device_id, device_name, current_a, voltage_v,
 
     logger.debug(f"Telemetrie published for {device_name} ({capteur_prefix})")
 
-def publish_device_status_h2s(device_id: int, current_a: float, voltage_v: float, power_w: float, energy_wh: float, timestamp=None):
+def publish_device_status_h2s(device_id: int, current_a: float, voltage_v: float, power_w: float,
+                              energy_wh: float, timestamp=None,
+                              energy_total_wh: float | None = None,
+                              power_factor: float | None = None):
     """
     Publish device status in H2S JSON gateway format consumed by h2s_agent (parsers.h2s_device).
+
+    ``energy_total_wh`` is the cumulative meter index: h2s_agent differentiates it across a
+    5-minute window to obtain that window's energy. ``energy_wh`` is the energy of a single
+    sample and is never substituted for the counter — the agent would then average increments
+    instead of summing them.
     """
     ts = _iso_utc(timestamp)
 
@@ -176,12 +194,49 @@ def publish_device_status_h2s(device_id: int, current_a: float, voltage_v: float
         device_payload["voltage_v"] = round(float(voltage_v), 1)
     if energy_wh is not None:
         device_payload["energy_wh"] = round(float(energy_wh), 3)
+    if energy_total_wh is not None:
+        device_payload["energy_total_wh"] = round(float(energy_total_wh), 3)
+    if power_factor is not None:
+        device_payload["power_factor"] = round(float(power_factor), 3)
     if len(device_payload) == 2:
-        logger.warning("Skipping empty Shelly status for device %s", device_id)
+        logger.warning("Skipping empty device status for device %s", device_id)
         return
     topic = f"h2s/devices/{device_id}/status"
     _publish_raw(topic, device_payload)
     logger.debug(f"Device status published to {topic}")
+
+
+def publish_weather_status_h2s(temperature_c: float | None, humidity_pct: float | None,
+                               wind_speed_m_s: float | None, irradiance_w_m2: float | None,
+                               rain_mm: float | None, timestamp=None):
+    """Weather in the H2S gateway format, the only one h2s_agent subscribes to (``parsers.h2s_weather``).
+
+    The per-sensor packets on the agent telemetry topic carry ``valeur``/``unite``/``capteur_id``;
+    no agent route reads that shape, so weather never reached the cloud and the forecast had no
+    input. Field names here are the backend's: ``temperature_c``, ``humidity_pct``,
+    ``wind_speed_m_s``, ``irradiance_w_m2``, ``rain_mm``.
+    """
+    ts = _iso_utc(timestamp)
+    values = {
+        "temperature_c": temperature_c,
+        "humidity_pct": humidity_pct,
+        "wind_speed_m_s": wind_speed_m_s,
+        "irradiance_w_m2": irradiance_w_m2,
+        "rain_mm": rain_mm,
+    }
+    payload: dict = {"timestamp": ts}
+    for key, value in values.items():
+        if value is None:
+            continue
+        if key == "temperature_c":
+            payload[key] = round(float(value), 2)
+        else:
+            payload[key] = round(max(0.0, float(value)), 3)
+    if len(payload) == 1:
+        logger.warning("Skipping empty weather status")
+        return
+    _publish_raw(MQTT_TOPIC_WEATHER_STATUS, payload)
+    logger.debug(f"Weather status published to {MQTT_TOPIC_WEATHER_STATUS}")
 
 def publish_weather_hourly(temperature, humidity, wind_speed, precipitation,
                            condition, ghi, timestamp):

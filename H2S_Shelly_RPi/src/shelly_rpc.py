@@ -134,6 +134,7 @@ class ShellyRPCClient:
             "power_w": power,
             "current_a": _number(measured, "current"),
             "voltage_v": _number(measured, "voltage"),
+            "power_factor": _number(measured, "pf", "power_factor"),
             "energy_total_wh": _energy_wh(measured),
             "measurement_timestamp": observed_at or utc_now(),
             "measurement_quality": "OK" if power is not None else "UNAVAILABLE",

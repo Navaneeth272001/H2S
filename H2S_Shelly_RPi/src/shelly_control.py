@@ -126,8 +126,10 @@ async def execute_battery_decision(
         planned = {"device_id": device_id, "name": device.get("name"), "ip": device.get("ip"),
                    "switch_id": device.get("switch_id", 0), "target_state": target_on}
         if mode == "simulation":
+            from .collector import set_simulated_relay_state
+            set_simulated_relay_state(device_id, target_on)
             planned.update({"command_sent": False, "verified": None, "state_before": None,
-                            "state_after": None, "measurement_quality": "UNAVAILABLE"})
+                            "state_after": target_on, "measurement_quality": "UNAVAILABLE"})
             result["commands"].append(planned)
             continue
 

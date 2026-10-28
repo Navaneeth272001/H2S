@@ -8,20 +8,28 @@ import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from sqlalchemy import select
+from sqlalchemy import select, func
 from src.config import (
     SHELLY_DEVICES, POLL_INTERVAL, MINUTES_PER_HOUR, TIMEZONE, MAX_ERRORS, HEARTBEAT_INTERVAL,
     BATTERY_ENABLED, BATTERY_STOCK_ID, BATTERY_NAME, SHELLY_PRIORITY_IDS,
-    BATTERY_SOURCE, BATTERY_SIMULATED_CHARGE_W
+    BATTERY_SOURCE, BATTERY_SIMULATED_CHARGE_W,
+    PRODUCTION_SOURCES, PRODUCTION_ENABLED
 )
-from src.database import init_db, AsyncSessionLocal, EnergyMinute, EnergyHourly, WeatherHourly, BatteryMinute, ShellyCommand
-from src.collector import fetch_shelly, fetch_weather
+from src.database import (
+    init_db, AsyncSessionLocal, EnergyMinute, EnergyHourly,
+    WeatherHourly, BatteryMinute, ProductionMinute, ShellyCommand
+)
+from src.collector import (
+    fetch_shelly, fetch_weather, fetch_weather_window,
+    interpolate_weather, resume_simulated_device_counters
+)
 from src.battery import get_battery_manager, estimate_simulated_production_w
+from src.renewable import ProductionSimulator
 from src.shelly_control import execute_battery_decision
 from src.notifier import send_email
 from src.mqtt_publisher import (
     publish_energy_minute, publish_energy_hourly,
-    publish_weather_hourly, publish_etat,
+    publish_weather_hourly, publish_weather_status_h2s, publish_etat,
     publish_battery_minute, publish_battery_status_h2s, publish_decision_report,
     publish_device_status_h2s,
     set_ordres_callback, get_mqtt_client, disconnect_mqtt
@@ -172,55 +180,150 @@ async def main():
 
     error_counts = {dev_id: 0 for dev_id in SHELLY_DEVICES}
     email_sent = {dev_id: False for dev_id in SHELLY_DEVICES}
-    
-    # buffers for hourly aggregation
-    buffers = {dev_id: {"energy": 0.0, "p": 0.0, "i": 0.0, "v": 0.0, "c": 0, "ic": 0, "vc": 0} for dev_id in SHELLY_DEVICES}
+    all_device_names = {dev_id: d["name"] for dev_id, d in SHELLY_DEVICES.items()}
+    for dev_id, src in PRODUCTION_SOURCES.items():
+        all_device_names[dev_id] = src["name"]
+
+    # buffers for hourly aggregation (consumption + production devices)
+    buffers = {
+        dev_id: {"energy": 0.0, "p": 0.0, "i": 0.0, "v": 0.0, "c": 0, "ic": 0, "vc": 0}
+        for dev_id in all_device_names
+    }
     minute_count = 0
     heartbeat_elapsed = 0     # seconds since last etat publish
-    
+
     tz = ZoneInfo(TIMEZONE)
     hour_start = datetime.now(tz).replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
 
     global _main_loop, _http_session
     _main_loop = asyncio.get_running_loop()
     battery_mgr = get_battery_manager()
-    if BATTERY_ENABLED and BATTERY_SOURCE == "simulation":
-        # Resume the digital twin's last simulated SoC across collector restarts.
-        async with AsyncSessionLocal() as db_session:
+    production_sim = ProductionSimulator()
+
+    async with AsyncSessionLocal() as db_session:
+        if BATTERY_ENABLED and BATTERY_SOURCE == "simulation":
+            # Resume the digital twin's last simulated SoC across collector restarts.
             last_soc = await db_session.scalar(
                 select(BatteryMinute.soc_pct)
                 .where(BatteryMinute.is_simulated.is_(True))
                 .order_by(BatteryMinute.timestamp.desc())
                 .limit(1)
             )
-        if last_soc is not None:
-            battery_mgr.soc_pct = max(5.0, min(100.0, float(last_soc)))
-            logger.info("Resumed simulated battery SoC at %.2f%%", battery_mgr.soc_pct)
+            if last_soc is not None:
+                battery_mgr.soc_pct = max(5.0, min(100.0, float(last_soc)))
+                logger.info("Resumed simulated battery SoC at %.2f%%", battery_mgr.soc_pct)
+
+        if production_sim.enabled:
+            rows = (
+                await db_session.execute(
+                    select(ProductionMinute.device_id, func.max(ProductionMinute.energy_total_wh))
+                    .group_by(ProductionMinute.device_id)
+                )
+            ).all()
+            production_sim.resume_counters({int(dev_id): float(val or 0.0) for dev_id, val in rows})
+
+        cons_rows = (
+            await db_session.execute(
+                select(EnergyMinute.device_id, func.max(EnergyMinute.energy_total_wh))
+                .group_by(EnergyMinute.device_id)
+            )
+        ).all()
+        resume_simulated_device_counters({int(dev_id): float(val or 0.0) for dev_id, val in cons_rows if val is not None})
 
     async with aiohttp.ClientSession() as session:
         _http_session = session
         weather_cache_hour = None
-        weather_cache = None
+        weather_window = None
         load_coverage_warning_active = False
         while True:
             now = datetime.now(tz)
 
-            # The proposal's phase-1 source is weather plus simulated renewable
-            # production. Refresh GHI hourly and reuse it for minute-level steps.
+            # Refresh weather window hourly and interpolate across the hour so
+            # weather, solar PV, wind turbine, and battery twin stay smooth.
             current_hour = now.replace(minute=0, second=0, microsecond=0)
-            if BATTERY_ENABLED and BATTERY_SOURCE == "simulation" and current_hour != weather_cache_hour:
+            if current_hour != weather_cache_hour or weather_window is None:
                 weather_cache_hour = current_hour
-                weather_cache = await fetch_weather(session, current_hour)
-                if weather_cache is None:
-                    logger.warning("Weather unavailable; virtual renewable production is 0 W this hour")
-                else:
-                    logger.info("Weather GHI for simulated production: %.1f W/m²", weather_cache["ghi"])
-            
+                weather_window = await fetch_weather_window(session, current_hour)
+                if weather_window and weather_window.get("current"):
+                    cur_w = weather_window["current"]
+                    logger.info(
+                        "Weather window for %s: GHI=%.1f W/m², wind=%.2f m/s, temp=%.1f °C",
+                        current_hour.strftime("%Y-%m-%d %H:%M"),
+                        cur_w.get("ghi") or 0.0,
+                        cur_w.get("wind_speed") or 0.0,
+                        cur_w.get("temperature") or 0.0,
+                    )
+
+            fraction = (now - current_hour).total_seconds() / 3600.0
+            weather_now = interpolate_weather(weather_window, fraction)
+            if weather_now:
+                publish_weather_status_h2s(
+                    temperature_c=weather_now.get("temperature"),
+                    humidity_pct=weather_now.get("humidity"),
+                    wind_speed_m_s=weather_now.get("wind_speed"),
+                    irradiance_w_m2=weather_now.get("ghi"),
+                    rain_mm=weather_now.get("precipitation"),
+                    timestamp=now,
+                )
+
+            # Step renewable production digital twin (SOLAR & WIND)
+            prod_readings = {}
+            if PRODUCTION_ENABLED and production_sim.enabled:
+                prod_readings = production_sim.step(
+                    irradiance_w_m2=weather_now.get("ghi") if weather_now else None,
+                    wind_speed_m_s=weather_now.get("wind_speed") if weather_now else None,
+                    timestamp=now,
+                    dt_seconds=POLL_INTERVAL,
+                )
+
             # Fetch all shellys concurrently
             tasks = [fetch_shelly(session, dev_id, dev_info) for dev_id, dev_info in SHELLY_DEVICES.items()]
             results = await asyncio.gather(*tasks)
 
             async with AsyncSessionLocal() as db_session:
+                # Persist and publish simulated renewable production sources (SOLAR & WIND)
+                for dev_id, prod in prod_readings.items():
+                    pm = ProductionMinute(
+                        timestamp=now.replace(tzinfo=None),
+                        device_id=prod.device_id,
+                        name=prod.name,
+                        source_type=prod.source_type,
+                        power_w=prod.power_w,
+                        voltage_v=prod.voltage_v,
+                        current_a=prod.current_a,
+                        energy_total_wh=prod.energy_total_wh,
+                        irradiance_w_m2=weather_now.get("ghi") if weather_now else None,
+                        wind_speed_m_s=weather_now.get("wind_speed") if weather_now else None,
+                    )
+                    db_session.add(pm)
+
+                    publish_energy_minute(
+                        device_id=prod.device_id,
+                        device_name=prod.name,
+                        current_a=prod.current_a,
+                        voltage_v=prod.voltage_v,
+                        power_w=prod.power_w,
+                        energy_minute_wh=prod.energy_wh,
+                        timestamp=now,
+                    )
+                    publish_device_status_h2s(
+                        device_id=prod.device_id,
+                        current_a=prod.current_a,
+                        voltage_v=prod.voltage_v,
+                        power_w=prod.power_w,
+                        energy_wh=prod.energy_wh,
+                        energy_total_wh=prod.energy_total_wh,
+                        power_factor=prod.power_factor,
+                        timestamp=now,
+                    )
+                    buffers[dev_id]["energy"] += prod.energy_wh
+                    buffers[dev_id]["p"] += prod.power_w
+                    buffers[dev_id]["c"] += 1
+                    buffers[dev_id]["i"] += prod.current_a
+                    buffers[dev_id]["ic"] += 1
+                    buffers[dev_id]["v"] += prod.voltage_v
+                    buffers[dev_id]["vc"] += 1
+
                 for res in results:
                     dev_id = res["device_id"]
                     if res["success"]:
@@ -266,6 +369,8 @@ async def main():
                                 voltage_v=voltage,
                                 power_w=power,
                                 energy_wh=energy_minute_wh,
+                                energy_total_wh=res.get("energy_total_wh"),
+                                power_factor=res.get("power_factor"),
                                 timestamp=now
                             )
 
@@ -313,14 +418,17 @@ async def main():
                     }
                     site_load_complete = bool(load_meter_ids) and load_meter_ids.issubset(measured_load_ids)
                     if not site_load_complete and not load_coverage_warning_active:
-                        logger.warning("Shelly load coverage incomplete; simulated CHARGE surplus set to 0 W")
+                        logger.warning("Shelly load coverage partial (%d/%d devices)", len(measured_load_ids), len(load_meter_ids))
                         load_coverage_warning_active = True
                     elif site_load_complete:
                         load_coverage_warning_active = False
-                    simulated_production = estimate_simulated_production_w(
-                        weather_cache.get("ghi") if weather_cache else None,
-                        BATTERY_SIMULATED_CHARGE_W,
-                    )
+                    if PRODUCTION_ENABLED and production_sim.enabled:
+                        simulated_production = production_sim.total_power_w()
+                    else:
+                        simulated_production = estimate_simulated_production_w(
+                            weather_now.get("ghi") if weather_now else None,
+                            BATTERY_SIMULATED_CHARGE_W,
+                        )
                     b_reading = await battery_mgr.update_async(
                         active_load_w=priority_active_load,
                         site_load_w=measured_site_load,
@@ -377,7 +485,10 @@ async def main():
 
                 await db_session.commit()
                 
-            logger.info(f"Minute data saved for {len(results)} devices and battery.")
+            logger.info(
+                "Minute data saved for %d consumption devices, %d production sources, and battery.",
+                len(results), len(prod_readings),
+            )
             minute_count += 1
             
             # Hourly processing
@@ -414,11 +525,12 @@ async def main():
                     # Save Hourly Energy
                     for dev_id, b in buffers.items():
                         if b["c"] > 0:
+                            dev_name = all_device_names.get(dev_id, f"Device {dev_id}")
                             eh = EnergyHourly(
                                 start_time=hour_start.replace(tzinfo=None),
                                 end_time=hour_end.replace(tzinfo=None),
                                 device_id=dev_id,
-                                device_name=SHELLY_DEVICES[dev_id]["name"],
+                                device_name=dev_name,
                                 avg_current_a=round(b["i"] / b["ic"], 3) if b["ic"] else None,
                                 avg_voltage_v=round(b["v"] / b["vc"], 1) if b["vc"] else None,
                                 avg_power_w=round(b["p"] / b["c"], 1),
@@ -429,7 +541,7 @@ async def main():
                             # Publish hourly energy to MQTT
                             publish_energy_hourly(
                                 device_id=dev_id,
-                                device_name=SHELLY_DEVICES[dev_id]["name"],
+                                device_name=dev_name,
                                 avg_current_a=round(b["i"] / b["ic"], 3) if b["ic"] else None,
                                 avg_voltage_v=round(b["v"] / b["vc"], 1) if b["vc"] else None,
                                 avg_power_w=round(b["p"] / b["c"], 1),
@@ -442,7 +554,10 @@ async def main():
                     logger.info("Hourly data committed.")
                 
                 # Reset
-                buffers = {d: {"energy": 0.0, "p": 0.0, "i": 0.0, "v": 0.0, "c": 0, "ic": 0, "vc": 0} for d in SHELLY_DEVICES}
+                buffers = {
+                    d: {"energy": 0.0, "p": 0.0, "i": 0.0, "v": 0.0, "c": 0, "ic": 0, "vc": 0}
+                    for d in all_device_names
+                }
                 minute_count = 0
                 hour_start = hour_end
 
