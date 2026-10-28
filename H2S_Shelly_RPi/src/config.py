@@ -159,8 +159,8 @@ PRODUCTION_POWER_FACTOR = float(os.getenv("PRODUCTION_POWER_FACTOR", "0.98"))
 PRODUCTION_MIN_OUTPUT_W = max(0.0, float(os.getenv("PRODUCTION_MIN_OUTPUT_W", "5")))
 
 _legacy_production_sources = {
-    20: {"name": "ROOFTOP PV (SIMULATED)", "type": "SOLAR", "surface_m2": 10.0, "efficiency": 0.22},
-    21: {
+    29: {"name": "ROOFTOP PV (SIMULATED)", "type": "SOLAR", "surface_m2": 10.0, "efficiency": 0.22},
+    30: {
         "name": "WIND TURBINE (SIMULATED)",
         "type": "WIND",
         "rotor_diameter_m": 3.0,

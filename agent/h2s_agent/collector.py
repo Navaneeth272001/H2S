@@ -236,35 +236,16 @@ class Collector:
             if not values:
                 continue
             if device_type == "weather":
-                # CALCUL DE LA PRODUCTION ENR THÉORIQUE (brique 18, §4.1.4 — spécification du client du
-                # 04/10/2026). C'est l'étape « prétraitement pour l'envoi au cloud » : on joint au relevé
-                # météo ce que les sources déclarées du site produiraient dans ces conditions, plutôt que
-                # d'envoyer l'irradiance et le vent bruts et de laisser le cloud refaire le calcul.
-                #
-                # Trois raisons, et elles sont dans la spécification : moins de bande passante, moins de
-                # charge au cloud, et un boîtier qui sait encore estimer sa production réseau coupé.
-                #
-                # CE N'EST PAS UNE MESURE. Ces trois nombres voyagent avec le relevé météo, jamais à la
-                # place d'une mesure de compteur : c'est au modèle de confronter le théorique au constaté.
-                values.update(
-                    energy_calculator.production_totale(
-                        [
-                            energy_calculator.SourceTheorique(
-                                type=src.type,
-                                surface_m2=src.surface_m2,
-                                rendement_pv=src.rendement_pv,
-                                diametre_rotor_m=src.diametre_rotor_m,
-                                rendement_eolien=src.rendement_eolien,
-                                vent_demarrage_m_s=src.vent_demarrage_m_s,
-                                vent_arret_m_s=src.vent_arret_m_s,
-                                puissance_nominale_w=src.puissance_nominale_w,
-                            )
-                            for src in self._sources
-                        ],
-                        irradiance_w_m2=values.get("irradiance_w_m2"),
-                        vitesse_vent_m_s=values.get("wind_speed_m_s"),
-                    )
-                )
+                # Contrat de ``POST /api/agent/sync/buffer`` pour ``source: weather`` :
+                # seules les 5 grandeurs météo sont acceptées par MeasurementRules.java ;
+                # toute clé supplémentaire (ex. production_*_w) provoque un rejet « grandeur inconnue ».
+                values = {
+                    k: v
+                    for k, v in values.items()
+                    if k in ("temperature_c", "humidity_pct", "wind_speed_m_s", "irradiance_w_m2", "rain_mm")
+                }
+                if not values:
+                    continue
             payload = {
                 "source": "weather" if device_type == "weather" else "device",
                 "values": values,

@@ -21,16 +21,17 @@ import sys
 from pathlib import Path
 
 DEFAULT_CONSUMPTION_IDS = (8, 9, 10, 11, 12, 13, 14, 15)
-DEFAULT_PRODUCTION_IDS = (20, 21)
+DEFAULT_PRODUCTION_IDS = (29, 30)
+STALE_PRODUCTION_IDS = (20, 21)
 DEFAULT_SOURCES = [
     {
-        "source_id": 20,
+        "source_id": 29,
         "type": "solar",
         "surface_m2": 10.0,
         "rendement_pv": 0.22,
     },
     {
-        "source_id": 21,
+        "source_id": 30,
         "type": "wind",
         "diametre_rotor_m": 3.0,
         "rendement_eolien": 0.35,
@@ -91,6 +92,10 @@ def update_agent_json(config_path: Path) -> dict:
             by_id[dev_id].setdefault("topic", f"h2s/devices/{dev_id}/status")
             by_id[dev_id]["role"] = cloud_roles.get(dev_id, by_id[dev_id].get("role", "CONSUMPTION"))
 
+    for stale_id in STALE_PRODUCTION_IDS:
+        if stale_id not in cloud_roles:
+            by_id.pop(stale_id, None)
+
     prod_ids = set(DEFAULT_PRODUCTION_IDS) | {
         dev_id for dev_id, role in cloud_roles.items() if role == "PRODUCTION"
     }
@@ -118,8 +123,7 @@ def update_agent_json(config_path: Path) -> dict:
             }
         ]
 
-    if not raw.get("sources"):
-        raw["sources"] = DEFAULT_SOURCES
+    raw["sources"] = DEFAULT_SOURCES
 
     if not raw.get("weather_topic"):
         raw["weather_topic"] = "h2s/site4/weather/status"
