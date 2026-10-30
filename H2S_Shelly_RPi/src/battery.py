@@ -223,11 +223,13 @@ class BatteryManager:
             p_discharge = 0.0
             # The proposal defines standby as maintaining the current SoC.
 
-        # Realistic electrical modeling
-        # Small voltage droop proportional to discharge power
-        droop = (p_discharge / max(1.0, self.max_power_w)) * 3.5
-        boost = (p_charge / max(1.0, self.max_power_w)) * 2.0
-        voltage = self.voltage_nominal - droop + boost
+        # Realistic electrical modeling based on Thévenin 2RC DC pack (Jackery 36V nominal)
+        # OCV ranges from ~33.0V (0% SoC) to ~38.6V (100% SoC), matching cloud model (38.54V at ~99.8%)
+        soc_ratio = max(0.0, min(1.0, self.soc_pct / 100.0))
+        ocv = (self.voltage_nominal - 3.0) + (soc_ratio * 5.6)
+        droop = (p_discharge / max(1.0, self.max_power_w)) * 0.8
+        boost = (p_charge / max(1.0, self.max_power_w)) * 0.8
+        voltage = ocv - droop + boost
 
         active_power = max(p_charge, p_discharge)
         current = active_power / max(1.0, voltage)
